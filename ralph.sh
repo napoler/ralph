@@ -93,6 +93,8 @@ TASK_MAPPING["default"]="qwen"
 
 # ---------- 解析命令行参数 ----------
 COMMAND=""
+DIRECT_TASK=""  # 直接传入的任务描述 (代替 prd.json)
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         # 主命令
@@ -102,6 +104,20 @@ while [[ $# -gt 0 ]]; do
             ;;
         spec|generate-specs)
             COMMAND="spec"
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        
+        # 直接任务模式 (不使用 prd.json)
+        --task|-t)
+            DIRECT_TASK="$2"
+            shift 2
+            ;;
+        --task=*)
+            DIRECT_TASK="${1#*=}"
             shift
             ;;
         
@@ -460,6 +476,140 @@ execute_task() {
     echo "✅ Completed: $task_id"
 }
 
+# ---------- 帮助函数 ----------
+show_help() {
+    cat << 'EOF'
+Ralph - AI Agent Loop with Load Balancing
+
+用法: ralph.sh [选项] [任务描述]
+
+如果不传任务描述，则从 prd.json 读取任务列表执行。
+
+选项:
+  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow
+  --project DIR         项目目录
+  --max N               最大迭代次数 (默认: 10)
+  --log-dir DIR         日志目录
+  --worktree-root DIR   工作树根目录
+  --base-branch NAME    基础分支 (默认: dev)
+  --no-load-balance     禁用负载均衡
+  --complete-signal SIG 完成信号
+  --task TASK           直接执行指定任务 (代替 prd.json)
+  
+  status                显示任务状态
+  spec                  生成 SPEC.md
+  -h, --help            显示帮助
+
+示例:
+  # 从 prd.json 执行任务
+  ralph.sh --tool qwen --max 10
+  
+  # 直接执行任务
+  ralph.sh --task "修复登录Bug"
+  
+  # 使用完整命令
+  ralph.sh --tool opencode --max 20 --task "实现用户认证"
+
+环境变量:
+  RALPH_TOOL, RALPH_PROJECT_DIR, RALPH_MAX_ITERATIONS
+EOF
+    exit 0
+}
+
+# ---------- 直接任务执行 ----------
+execute_direct_task() {
+    local task="$1"
+    local iteration=1
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🔄 Direct Task Mode | Tool: $TOOL"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Task: $task"
+    echo ""
+    
+    # 创建工作树
+    local worktree_info=$(create_worktree "direct")
+    local worktree_dir=$(echo "$worktree_info" | cut -d'|' -f1)
+    local branch_name=$(echo "$worktree_info" | cut -d'|' -f2)
+    
+    if [ -z "$worktree_dir" ]; then
+        echo "Error: Failed to create worktree"
+        return 1
+    fi
+    
+    echo "📁 Worktree: $worktree_dir"
+    cd "$worktree_dir"
+    
+    # 构建任务提示 (包含 SPEC 说明)
+    local task_prompt="任务: $task
+
+项目目录: $PROJECT_DIR
+工作目录: $worktree_dir
+
+请按照以下步骤执行:
+1. Research - 研究现有代码结构
+2. Plan - 制定实现计划
+3. Implement - 实施代码并验证
+
+完成后:
+- 运行质量检查 (typecheck/tests)
+- 提交: git commit -m \"feat: $task\"
+- 输出完成信号: $COMPLETE_SIGNAL"
+    
+    local log_file="$LOG_DIR/ralph-direct-$timestamp.log"
+    
+    # 执行任务 (循环直到完成或达到最大迭代)
+    for i in $(seq 1 $MAX_ITERATIONS); do
+        echo ""
+        echo "--- Iteration $i / $MAX_ITERATIONS ---"
+        
+        case "$TOOL" in
+            qwen)
+                qwen -p "$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+            opencode)
+                opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+            cline)
+                cline "$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+            kilocode)
+                kilocode run "$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+            iflow)
+                iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+        esac
+        
+        # 检查完成信号
+        if grep -q "$COMPLETE_SIGNAL" "$log_file" 2>/dev/null; then
+            echo ""
+            echo "🎉 Task completed!"
+            
+            # 提交
+            if ! git diff --quiet 2>/dev/null; then
+                git add -A
+                git commit -m "feat: $task" 2>/dev/null || true
+                git push -u origin "$branch_name" 2>/dev/null || true
+            fi
+            
+            # 清理
+            cleanup_worktree "$worktree_dir" "$branch_name"
+            return 0
+        fi
+        
+        sleep 2
+    done
+    
+    # 清理
+    cleanup_worktree "$worktree_dir" "$branch_name"
+    
+    echo "⚠️ Max iterations reached: $MAX_ITERATIONS"
+    return 1
+}
+
 # ---------- 主循环 ----------
 
 main() {
@@ -476,6 +626,20 @@ main() {
             exit 0
             ;;
     esac
+    
+    # 直接任务模式
+    if [ -n "$DIRECT_TASK" ]; then
+        # 验证工具
+        if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
+            echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
+            exit 1
+        fi
+        
+        mkdir -p "$LOG_DIR" "$SPECS_DIR" "$ARCHIVE_DIR" "$WORKTREE_ROOT"
+        
+        execute_direct_task "$DIRECT_TASK"
+        exit $?
+    fi
     
     # 验证工具
     if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
