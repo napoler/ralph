@@ -67,27 +67,70 @@ SPECS_DIR=""
 # 有效工具列表
 VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
 
+
+# ========== 通用 CLI 工具路径自动解析 ==========
+# 检测所有可能的 CLI 工具路径（PATH, npm global, yarn global, etc.）
+
+resolve_cli_tool() {
+    local tool_name="$1"
+    
+    # 1. 优先使用 PATH 中的命令
+    if command -v "$tool_name" &> /dev/null; then
+        command -v "$tool_name"
+        return 0
+    fi
+    
+    # 2. 尝试 $HOME/.npm-global/bin
+    if [ -f "$HOME/.npm-global/bin/$tool_name" ]; then
+        echo "$HOME/.npm-global/bin/$tool_name"
+        return 0
+    fi
+    
+    # 3. 尝试 npm config prefix/bin
+    local npm_prefix
+    npm_prefix=$(npm config get prefix 2>/dev/null)
+    if [ -n "$npm_prefix" ] && [ -f "$npm_prefix/bin/$tool_name" ]; then
+        echo "$npm_prefix/bin/$tool_name"
+        return 0
+    fi
+    
+    # 4. 尝试 yarn global bin
+    local yarn_bin
+    yarn_bin=$(yarn global bin 2>/dev/null)
+    if [ -n "$yarn_bin" ] && [ -f "$yarn_bin/$tool_name" ]; then
+        echo "$yarn_bin/$tool_name"
+        return 0
+    fi
+    
+    # 5. 尝试 nvm 全局安装
+    if [ -n "$NVM_DIR" ] && [ -f "$NVM_DIR/versions/node/current/bin/$tool_name" ]; then
+        echo "$NVM_DIR/versions/node/current/bin/$tool_name"
+        return 0
+    fi
+    
+    # 6. 尝试 /usr/local/bin
+    if [ -f "/usr/local/bin/$tool_name" ]; then
+        echo "/usr/local/bin/$tool_name"
+        return 0
+    fi
+    
+    # 7. 回退到工具名（依赖 PATH）
+    echo "$tool_name"
+    return 1
+}
+
+# 初始化所有工具的路径
+declare -A TOOL_PATHS
+for tool in "qwen" "opencode" "cline" "kilocode" "iflow" "gemini"; do
+    TOOL_PATHS["$tool"]=$(resolve_cli_tool "$tool")
+done
+
 # 工具命令映射
 declare -A TOOL_COMMANDS
-# 解析 qwen 路径
-QWEN_PATH=""
-if command -v qwen &> /dev/null; then
-    QWEN_PATH=$(command -v qwen)
-elif [ -f "$HOME/.npm-global/bin/qwen" ]; then
-    QWEN_PATH="$HOME/.npm-global/bin/qwen"
-else
-    NPM_PREFIX="$(npm config get prefix 2>/dev/null)"
-    if [ -f "$NPM_PREFIX/bin/qwen" ]; then
-        QWEN_PATH="$NPM_PREFIX/bin/qwen"
-    else
-        QWEN_PATH="qwen"
-    fi
-fi
-
-TOOL_COMMANDS["cline"]="cline"
-TOOL_COMMANDS["kilocode"]="kilocode run"
-TOOL_COMMANDS["iflow"]="iflow run --config"
-TOOL_COMMANDS["gemini"]="gemini -p"
+TOOL_COMMANDS["cline"]="${TOOL_PATHS[cline]}"
+TOOL_COMMANDS["kilocode"]="${TOOL_PATHS[kilocode]}"
+TOOL_COMMANDS["iflow"]="${TOOL_PATHS[iflow]}"
+TOOL_COMMANDS["gemini"]="${TOOL_PATHS[gemini]} -p"
 
 # 任务到工具的映射
 declare -A TASK_MAPPING
@@ -482,24 +525,24 @@ execute_task() {
     # 执行任务
     case "$selected_tool" in
         qwen)
-            "$QWEN_PATH" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[qwen]}" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
             ;;
         opencode)
-            opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         cline)
-            cline "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[cline]}" "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         kilocode)
-            kilocode run "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[kilocode]}" run "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         iflow)
-            iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[iflow]}" run --config="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         gemini)
             # gemini 需要代理 (从配置读取)
             [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-            gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[gemini]}" -p "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
     esac
     
@@ -612,24 +655,24 @@ execute_direct_task() {
         
         case "$TOOL" in
             qwen)
-                "$QWEN_PATH" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[qwen]}" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
                 ;;
             opencode)
-                opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             cline)
-                cline "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[cline]}" "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             kilocode)
-                kilocode run "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[kilocode]}" run "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             iflow)
-                iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[iflow]}" run --config="$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             gemini)
                 # gemini 需要代理 (从配置读取)
                 [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-                gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[gemini]}" -p "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
         esac
         
