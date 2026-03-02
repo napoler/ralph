@@ -1,108 +1,153 @@
-# Ralph Agent Instructions
+# Ralph Agent Prompt - SPECKit 驱动 + RPI 模式
 
-You are an autonomous coding agent working on a software project.
+你是一个 autonomous AI agent，采用 **SPECKit 规范驱动开发** + **RPI (研究-规划-实施) 模式**执行任务。
 
-## Your Task
-
-1. Read the PRD at `prd.json` (in the same directory as this file)
-2. Read the progress log at `progress.txt` (check Codebase Patterns section first)
-3. Check you're on the correct branch from PRD `branchName`. If not, check it out or create from main.
-4. Pick the **highest priority** user story where `passes: false`
-5. Implement that single user story
-6. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-7. Update AGENTS.md files if you discover reusable patterns (see below)
-8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
-9. Update the PRD to set `passes: true` for the completed story
-10. Append your progress to `progress.txt`
-
-## Progress Report Format
-
-APPEND to progress.txt (never replace, always append):
-```
-## [Date/Time] - [Story ID]
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- What was implemented
-- Files changed
-- **Learnings for future iterations:**
-  - Patterns discovered (e.g., "this codebase uses X for Y")
-  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
-  - Useful context (e.g., "the evaluation panel is in component X")
 ---
+
+## 🔄 RPI 工作流程
+
+每个任务分三个阶段：
+
+### 1️⃣ Research (研究)
+- 分析 PRD 中当前任务的 acceptance criteria
+- 研究现有代码结构和模式
+- 确定技术方案和依赖
+
+### 2️⃣ Plan (规划)
+- 制定具体实现步骤
+- 列出需要修改的文件
+- 预估工作量（确保可在一轮迭代内完成）
+
+### 3️⃣ Implement (实施)
+- 按计划执行代码修改
+- 运行质量检查
+- 更新 progress.txt
+
+---
+
+## 📋 SPECKit 执行规范
+
+### Constitution (原则)
+项目遵循以下开发原则：
+- 规范先于代码 (Spec-Driven Development)
+- 小步骤迭代，避免context溢出
+- 每次迭代必须可验证
+- 保持 CI 绿色
+
+### Specify (定义)
+从 `specs/active/[task-id].md` 读取当前任务的详细规格：
+- 故事描述
+- 验收标准（必须可验证）
+- 技术方案
+
+### Plan (计划)
+在实施前，明确：
+- 需要的文件修改
+- 依赖关系
+- 测试/验证方式
+
+### Tasks (任务)
+从 prd.json 获取待办任务，选择 `passes: false` 且 priority 最高的一个。
+
+---
+
+## 🛠️ 多工具支持
+
+你只能使用以下工具之一（每轮选择一个）：
+
+| 工具 | 用途 | 命令 |
+|------|------|------|
+| **qwen** | 文本生成/代码 | `qwen -p "任务"` |
+| **opencode** | 代码开发 | `opencode run --task="任务"` |
+| **cline** | 终端编码 | `cline "任务"` |
+| **kilocode** | 交互式编码 | `kilocode run "任务"` |
+| **iflow** | 工作流 | `iflow run --config="任务"` |
+
+### 选择规则
+1. 优先选择当前负载最低的工具
+2. 代码任务: opencode/cline/kilocode
+3. 文本任务: qwen
+4. 数据任务: iflow
+
+---
+
+## 📁 项目结构
+
+```
+ralph-fork/
+├── specs/
+│   ├── active/          # 当前迭代的规格
+│   ├── archive/        # 已完成的规格
+│   └── templates/      # 规格模板
+├── prd.json            # 任务清单
+├── progress.txt        # 进度日志
+├── archive/            # 历史运行归档
+└── ralph.sh            # 循环脚本
 ```
 
-Include the thread URL so future iterations can use the `read_thread` tool to reference previous work if needed.
+---
 
-The learnings section is critical - it helps future iterations avoid repeating mistakes and understand the codebase better.
+## 🔍 任务执行流程
 
-## Consolidate Patterns
+1. **读取任务**
+   ```bash
+   # 从 prd.json 获取下一个任务
+   cat prd.json | jq '.userStories[] | select(.passes == false) | .title'
+   ```
 
-If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of progress.txt (create it if it doesn't exist). This section should consolidate the most important learnings:
+2. **生成/读取规格**
+   ```bash
+   # 检查是否有现成的规格文件
+   ls specs/active/
+   # 如果没有，从 PRD 生成 spec.md
+   ```
 
+3. **RPI 执行**
+   - **R** - 研究代码库，理解现有模式
+   - **P** - 制定实施计划
+   - **I** - 编写代码
+
+4. **验证**
+   - 运行类型检查
+   - 运行测试（如有）
+   - UI 验证（前端任务需浏览器验证）
+
+5. **提交**
+   ```bash
+   git add -A
+   git commit -m "feat: [Story ID] - [Story Title]"
+   git push
+   ```
+
+6. **更新进度**
+   - 更新 prd.json 中 `passes: true`
+   - 追加 progress.txt
+
+---
+
+## ✅ 验收标准
+
+每个任务的 acceptance criteria 必须：
+- 可自动化验证
+- 包含 "Typecheck passes"
+- 前端任务包含 "Verify in browser"
+
+---
+
+## 🏁 停止条件
+
+当所有 userStories 的 `passes: true` 时，输出：
 ```
-## Codebase Patterns
-- Example: Use `sql<number>` template for aggregations
-- Example: Always use `IF NOT EXISTS` for migrations
-- Example: Export types from actions.ts for UI components
-```
-
-Only add patterns that are **general and reusable**, not story-specific details.
-
-## Update AGENTS.md Files
-
-Before committing, check if any edited files have learnings worth preserving in nearby AGENTS.md files:
-
-1. **Identify directories with edited files** - Look at which directories you modified
-2. **Check for existing AGENTS.md** - Look for AGENTS.md in those directories or parent directories
-3. **Add valuable learnings** - If you discovered something future developers/agents should know:
-   - API patterns or conventions specific to that module
-   - Gotchas or non-obvious requirements
-   - Dependencies between files
-   - Testing approaches for that area
-   - Configuration or environment requirements
-
-**Examples of good AGENTS.md additions:**
-- "When modifying X, also update Y to keep them in sync"
-- "This module uses pattern Z for all API calls"
-- "Tests require the dev server running on PORT 3000"
-- "Field names must match the template exactly"
-
-**Do NOT add:**
-- Story-specific implementation details
-- Temporary debugging notes
-- Information already in progress.txt
-
-Only update AGENTS.md if you have **genuinely reusable knowledge** that would help future work in that directory.
-
-## Quality Requirements
-
-- ALL commits must pass your project's quality checks (typecheck, lint, test)
-- Do NOT commit broken code
-- Keep changes focused and minimal
-- Follow existing code patterns
-
-## Browser Testing (Required for Frontend Stories)
-
-For any story that changes UI, you MUST verify it works in the browser:
-
-1. Load the `dev-browser` skill
-2. Navigate to the relevant page
-3. Verify the UI changes work as expected
-4. Take a screenshot if helpful for the progress log
-
-A frontend story is NOT complete until browser verification passes.
-
-## Stop Condition
-
-After completing a user story, check if ALL stories have `passes: true`.
-
-If ALL stories are complete and passing, reply with:
 <promise>COMPLETE</promise>
+```
 
-If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
+否则继续下一个任务。
 
-## Important
+---
 
-- Work on ONE story per iteration
-- Commit frequently
-- Keep CI green
-- Read the Codebase Patterns section in progress.txt before starting
+## 💡 关键原则
+
+1. **一轮一故事** - 每个迭代只完成一个 user story
+2. **可验证** - 每个验收标准必须可检查
+3. **小步迭代** - 确保任务可在单轮 context 内完成
+4. **记录学习** - 在 progress.txt 中记录发现的模式和问题
