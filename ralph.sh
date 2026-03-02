@@ -398,10 +398,16 @@ create_worktree() {
     local base="$BASE_BRANCH"
     git rev-parse --verify dev >/dev/null 2>&1 || base="main"
     
-    if git worktree add "$worktree_dir" -b "$branch_name" 2>/dev/null; then
+    # 使用 --porcelain 模式避免 git 输出干扰信息
+    if git worktree add --porcelain "$worktree_dir" -b "$branch_name" "$base" >/dev/null 2>&1; then
         echo "$worktree_dir|$branch_name"
     else
-        echo ""
+        # 降级到普通模式（兼容旧版本 git）
+        if git worktree add "$worktree_dir" -b "$branch_name" "$base" >/dev/null 2>&1; then
+            echo "$worktree_dir|$branch_name"
+        else
+            echo ""
+        fi
     fi
 }
 
