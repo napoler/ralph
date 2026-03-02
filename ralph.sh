@@ -2,25 +2,64 @@
 # ============================================
 # Ralph - SPECKit 驱动 + 负载均衡
 # 配置文件: ralph.conf
+# 命令行参数优先于配置文件
 # ============================================
 
 set -e
 
-# ---------- 默认值 (可被配置文件覆盖) ----------
+# ---------- 解析命令行参数 ----------
+# 必须先解析参数，因为有些参数会影响配置文件路径等
+
+# 显示帮助
+if [[ "$1" =~ (-h|--help|help) ]] || [ "$1" = "?" ]; then
+    cat << EOF
+Ralph - AI Agent Loop with Load Balancing
+
+用法: $0 [选项] [任务]
+
+选项:
+  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow
+  --project DIR         项目目录 (覆盖配置)
+  --max N               最大迭代次数
+  --log-dir DIR         日志目录
+  --worktree-root DIR   工作树根目录
+  --base-branch NAME    基础分支
+  --no-load-balance     禁用负载均衡，使用指定工具
+  --complete-signal SIG 完成信号 (默认: <promise>COMPLETE</promise>)
+  
+  status                显示任务状态
+  spec                  生成 SPEC.md
+  
+环境变量:
+  RALPH_PROJECT_DIR, RALPH_TOOL, RALPH_MAX_ITERATIONS, etc.
+
+示例:
+  $0 --tool opencode --max 20
+  $0 --project /path/to/project status
+  RALPH_TOOL=opencode $0 "实现功能X"
+
+Cron 示例:
+  RALPH_PROJECT_DIR=/path/to/project RALPH_TOOL=opencode $0 --max 5
+EOF
+    exit 0
+fi
+
+# ---------- 默认值 (可被配置/环境变量/命令行覆盖) ----------
 TOOL="qwen"
 MAX_ITERATIONS=10
 PROJECT_DIR=""
+LOG_DIR=""
+WORKTREE_ROOT="/mnt/data/dev/tmp"
+BASE_BRANCH="dev"
+LOAD_BALANCE="true"
 COMPLETE_SIGNAL="<promise>COMPLETE</promise>"
 
-# 目录变量 (将在初始化时设置)
+# 目录变量
 SCRIPT_DIR=""
 PRD_FILE=""
 PROGRESS_FILE=""
 ARCHIVE_DIR=""
 SPECS_DIR=""
-LOG_DIR=""
-WORKTREE_ROOT="/mnt/data/dev/tmp"
-BASE_BRANCH="dev"
 
 # 有效工具列表
 VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow")
@@ -52,114 +91,149 @@ TASK_MAPPING["data"]="iflow"
 TASK_MAPPING["process"]="iflow"
 TASK_MAPPING["default"]="qwen"
 
-# 加载配置文件
+# ---------- 解析命令行参数 ----------
+COMMAND=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        # 主命令
+        status|show)
+            COMMAND="status"
+            shift
+            ;;
+        spec|generate-specs)
+            COMMAND="spec"
+            shift
+            ;;
+        
+        # 参数选项
+        --tool)
+            TOOL="$2"
+            shift 2
+            ;;
+        --tool=*)
+            TOOL="${1#*=}"
+            shift
+            ;;
+            
+        --project|--project-dir|-p)
+            PROJECT_DIR="$2"
+            shift 2
+            ;;
+        --project=*)
+            PROJECT_DIR="${1#*=}"
+            shift
+            ;;
+            
+        --max|-m)
+            MAX_ITERATIONS="$2"
+            shift 2
+            ;;
+        --max=*)
+            MAX_ITERATIONS="${1#*=}"
+            shift
+            ;;
+            
+        --log-dir)
+            LOG_DIR="$2"
+            shift 2
+            ;;
+        --log-dir=*)
+            LOG_DIR="${1#*=}"
+            shift
+            ;;
+            
+        --worktree-root)
+            WORKTREE_ROOT="$2"
+            shift 2
+            ;;
+        --worktree-root=*)
+            WORKTREE_ROOT="${1#*=}"
+            shift
+            ;;
+            
+        --base-branch)
+            BASE_BRANCH="$2"
+            shift 2
+            ;;
+        --base-branch=*)
+            BASE_BRANCH="${1#*=}"
+            shift
+            ;;
+            
+        --complete-signal)
+            COMPLETE_SIGNAL="$2"
+            shift 2
+            ;;
+        --complete-signal=*)
+            COMPLETE_SIGNAL="${1#*=}"
+            shift
+            ;;
+            
+        --no-load-balance)
+            LOAD_BALANCE="false"
+            shift
+            ;;
+            
+        --config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+            
+        --)
+            shift
+            break
+            ;;
+            
+        *)
+            # 未知参数
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                MAX_ITERATIONS="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# ---------- 加载配置文件 ----------
 load_config() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    local config_file="$SCRIPT_DIR/ralph.conf"
+    # 优先使用指定配置文件，否则查找 ralph.conf
+    local config_file="${CONFIG_FILE:-$SCRIPT_DIR/ralph.conf}"
+    
     if [ -f "$config_file" ]; then
         source "$config_file"
         echo "[RALPH] ✓ Loaded config: $config_file"
     fi
     
-    # 环境变量覆盖
+    # 环境变量覆盖配置文件
     [ -n "$RALPH_PROJECT_DIR" ] && PROJECT_DIR="$RALPH_PROJECT_DIR"
     [ -n "$RALPH_TOOL" ] && TOOL="$RALPH_TOOL"
     [ -n "$RALPH_MAX_ITERATIONS" ] && MAX_ITERATIONS="$RALPH_MAX_ITERATIONS"
+    [ -n "$RALPH_LOG_DIR" ] && LOG_DIR="$RALPH_LOG_DIR"
+    [ -n "$RALPH_WORKTREE_ROOT" ] && WORKTREE_ROOT="$RALPH_WORKTREE_ROOT"
+    [ -n "$RALPH_BASE_BRANCH" ] && BASE_BRANCH="$RALPH_BASE_BRANCH"
+    [ -n "$RALPH_LOAD_BALANCE" ] && LOAD_BALANCE="$RALPH_LOAD_BALANCE"
+    [ -n "$RALPH_COMPLETE_SIGNAL" ] && COMPLETE_SIGNAL="$RALPH_COMPLETE_SIGNAL"
     
-    # 如果没有设置 PROJECT_DIR，尝试从配置文件目录推断
+    # 如果没有设置 PROJECT_DIR，使用默认值
     if [ -z "$PROJECT_DIR" ]; then
-        # 默认使用 decentralized-box
         PROJECT_DIR="/mnt/data/dev/decentralized-box"
     fi
     
-    # 初始化其他目录
+    # 初始化目录
     PRD_FILE="$SCRIPT_DIR/prd.json"
     PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
     ARCHIVE_DIR="$SCRIPT_DIR/archive"
     SPECS_DIR="$SCRIPT_DIR/specs/active"
-    LOG_DIR="/mnt/data/dev/tmp/ralph-$(date +%Y%m%d)/logs"
-}
-
-# ========== 解析参数 ==========
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --tool)
-                TOOL="$2"
-                shift 2
-                ;;
-            --tool=*)
-                TOOL="${1#*=}"
-                shift
-                ;;
-            --project)
-                PROJECT_DIR="$2"
-                shift 2
-                ;;
-            --max|-m)
-                MAX_ITERATIONS="$2"
-                shift 2
-                ;;
-            --project-dir)
-                PROJECT_DIR="$2"
-                shift 2
-                ;;
-            status|show)
-                show_status
-                exit 0
-                ;;
-            spec|generate-specs)
-                generate_specs
-                exit 0
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                if [[ "$1" =~ ^[0-9]+$ ]]; then
-                    MAX_ITERATIONS="$1"
-                fi
-                shift
-                ;;
-        esac
-    done
     
-    # 验证工具
-    if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
-        echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
-        exit 1
+    # LOG_DIR 默认值
+    if [ -z "$LOG_DIR" ]; then
+        LOG_DIR="/mnt/data/dev/tmp/ralph-$(date +%Y%m%d)/logs"
     fi
 }
 
-show_help() {
-    cat << EOF
-Ralph - AI Agent Loop with Load Balancing
-
-用法: $0 [选项] [任务]
-
-选项:
-  --tool AGENT       AI 工具: qwen, opencode, cline, kilocode, iflow
-  --project DIR      项目目录 (覆盖配置)
-  --max N            最大迭代次数
-  status             显示任务状态
-  spec               生成 SPEC.md
-  
-环境变量:
-  RALPH_PROJECT_DIR      项目目录
-  RALPH_TOOL            默认工具
-  RALPH_MAX_ITERATIONS  最大迭代次数
-  RALPH_LOAD_BALANCE    启用负载均衡 (true/false)
-
-示例:
-  $0 --tool opencode --max 20
-  $0 --project /path/to/project status
-  RALPH_TOOL=opencode $0 "实现功能X"
-EOF
-}
-
-# ========== 辅助函数 ==========
+# ---------- 辅助函数 ----------
 
 show_status() {
     echo "=== Ralph Status ==="
@@ -171,14 +245,17 @@ show_status() {
         echo "Pending tasks:"
         jq -r '.userStories[] | select(.passes == false) | "  [\(.priority)] \(.id): \(.title)"' "$PRD_FILE"
     else
-        echo "No prd.json found"
+        echo "No prd.json found in: $PRD_FILE"
     fi
     
     echo ""
     echo "Current config:"
     echo "  Tool: $TOOL"
+    echo "  Load Balance: $LOAD_BALANCE"
     echo "  Project: $PROJECT_DIR"
     echo "  Max iterations: $MAX_ITERATIONS"
+    echo "  Log dir: $LOG_DIR"
+    echo "  Worktree root: $WORKTREE_ROOT"
 }
 
 get_tool_load() {
@@ -225,11 +302,13 @@ select_tool_for_task() {
 
 # 生成 specs
 generate_specs() {
+    mkdir -p "$SPECS_DIR"
+    
     if [ -f "$PRD_FILE" ]; then
         "$SCRIPT_DIR/generate-specs.sh" "$PRD_FILE" "$SPECS_DIR" 2>/dev/null || true
-        echo "✓ Specs generated"
+        echo "✓ Specs generated in: $SPECS_DIR"
     else
-        echo "Error: prd.json not found"
+        echo "Error: prd.json not found: $PRD_FILE"
         exit 1
     fi
 }
@@ -267,7 +346,7 @@ get_next_task() {
     fi
 }
 
-# ========== 工作树管理 ==========
+# ---------- 工作树管理 ----------
 
 create_worktree() {
     local task_id="$1"
@@ -300,7 +379,7 @@ cleanup_worktree() {
     git branch -D "$branch_name" 2>/dev/null || true
 }
 
-# ========== 执行任务 ==========
+# ---------- 执行任务 ----------
 
 execute_task() {
     local task_id="$1"
@@ -315,7 +394,7 @@ execute_task() {
     
     # 选择工具 (负载均衡 + 任务匹配)
     local selected_tool
-    if [ "$RALPH_LOAD_BALANCE" = "true" ]; then
+    if [ "$LOAD_BALANCE" = "true" ]; then
         selected_tool=$(select_tool_for_task "$task_title")
     else
         selected_tool="$TOOL"
@@ -341,23 +420,15 @@ execute_task() {
     local task_prompt="完成任务: $task_title
     
 参考规格: $SPECS_DIR/${task_id}.md
-    
-按 SPECKit 流程:
-1. Research - 研究代码
-2. Plan - 规划实现  
-3. Implement - 实施代码
 
-完成后:
-- 运行质量检查
-- 提交: git commit -m \"feat: $task_id - $task_title\""
+完成后输出: $COMPLETE_SIGNAL"
     
     local log_file="$LOG_DIR/ralph-$timestamp.log"
     
     # 执行任务
-    local cmd="${TOOL_COMMANDS[$selected_tool]}"
     case "$selected_tool" in
         qwen)
-            echo "$cmd \"$task_prompt\"" | bash 2>&1 | tee -a "$log_file"
+            qwen -p "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         opencode)
             opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
@@ -389,11 +460,28 @@ execute_task() {
     echo "✅ Completed: $task_id"
 }
 
-# ========== 主循环 ==========
+# ---------- 主循环 ----------
 
 main() {
     load_config
-    parse_args "$@"
+    
+    # 处理命令
+    case "$COMMAND" in
+        status)
+            show_status
+            exit 0
+            ;;
+        spec)
+            generate_specs
+            exit 0
+            ;;
+    esac
+    
+    # 验证工具
+    if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
+        echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
+        exit 1
+    fi
     
     # 创建必要目录
     mkdir -p "$LOG_DIR" "$SPECS_DIR" "$ARCHIVE_DIR" "$WORKTREE_ROOT"
@@ -403,6 +491,8 @@ main() {
         echo "# Ralph Progress Log" > "$PROGRESS_FILE"
         echo "Started: $(date)" >> "$PROGRESS_FILE"
         echo "Tool: $TOOL" >> "$PROGRESS_FILE"
+        echo "Load Balance: $LOAD_BALANCE" >> "$PROGRESS_FILE"
+        echo "Project: $PROJECT_DIR" >> "$PROGRESS_FILE"
         echo "---" >> "$PROGRESS_FILE"
     fi
     
@@ -419,7 +509,8 @@ main() {
     generate_specs
     
     echo "🚀 Starting Ralph"
-    echo "   Tool: $TOOL (load balance: ${RALPH_LOAD_BALANCE:-true})"
+    echo "   Tool: $TOOL"
+    echo "   Load Balance: $LOAD_BALANCE"
     echo "   Project: $PROJECT_DIR"
     echo "   Max iterations: $MAX_ITERATIONS"
     echo "   Log: $LOG_DIR"
