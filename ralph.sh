@@ -130,7 +130,7 @@ declare -A TOOL_COMMANDS
 TOOL_COMMANDS["cline"]="${TOOL_PATHS[cline]} -y"
 TOOL_COMMANDS["kilocode"]="${TOOL_PATHS[kilocode]} run --auto"
 TOOL_COMMANDS["iflow"]="${TOOL_PATHS[iflow]} -y"
-TOOL_COMMANDS["gemini"]="${TOOL_PATHS[gemini]} -p"
+TOOL_COMMANDS["gemini"]="${TOOL_PATHS[gemini]} -p -y"
 
 # 任务到工具的映射
 declare -A TASK_MAPPING
@@ -542,7 +542,7 @@ execute_task() {
         gemini)
             # gemini 需要代理 (从配置读取)
             [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-            "${TOOL_PATHS[gemini]}" -p "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[gemini]}" -p -y "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
     esac
     
@@ -672,7 +672,7 @@ execute_direct_task() {
             gemini)
                 # gemini 需要代理 (从配置读取)
                 [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-                "${TOOL_PATHS[gemini]}" -p "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[gemini]}" -p -y "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
         esac
         
