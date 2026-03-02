@@ -54,6 +54,7 @@ WORKTREE_ROOT="/mnt/data/dev/tmp"
 BASE_BRANCH="dev"
 LOAD_BALANCE="true"
 COMPLETE_SIGNAL="<promise>COMPLETE</promise>"
+PROXY=""  # 代理地址，从配置文件读取
 
 # 目录变量
 SCRIPT_DIR=""
@@ -243,6 +244,7 @@ load_config() {
     [ -n "$RALPH_BASE_BRANCH" ] && BASE_BRANCH="$RALPH_BASE_BRANCH"
     [ -n "$RALPH_LOAD_BALANCE" ] && LOAD_BALANCE="$RALPH_LOAD_BALANCE"
     [ -n "$RALPH_COMPLETE_SIGNAL" ] && COMPLETE_SIGNAL="$RALPH_COMPLETE_SIGNAL"
+    [ -n "$RALPH_PROXY" ] && PROXY="$RALPH_PROXY"
     
     # 如果没有设置 PROJECT_DIR，使用默认值
     if [ -z "$PROJECT_DIR" ]; then
@@ -471,9 +473,8 @@ execute_task() {
             iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         gemini)
-            # gemini 需要代理
-            export http_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
-            export https_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
+            # gemini 需要代理 (从配置读取)
+            [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
             gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
     esac
@@ -601,9 +602,8 @@ execute_direct_task() {
                 iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             gemini)
-                # gemini 需要代理
-                export http_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
-                export https_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
+                # gemini 需要代理 (从配置读取)
+                [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
                 gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
         esac
