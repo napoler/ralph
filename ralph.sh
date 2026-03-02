@@ -18,7 +18,7 @@ Ralph - AI Agent Loop with Load Balancing
 用法: $0 [选项] [任务]
 
 选项:
-  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow
+  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow, gemini
   --project DIR         项目目录 (覆盖配置)
   --max N               最大迭代次数
   --log-dir DIR         日志目录
@@ -62,7 +62,7 @@ ARCHIVE_DIR=""
 SPECS_DIR=""
 
 # 有效工具列表
-VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow")
+VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
 
 # 工具命令映射
 declare -A TOOL_COMMANDS
@@ -71,6 +71,7 @@ TOOL_COMMANDS["opencode"]="opencode run --task"
 TOOL_COMMANDS["cline"]="cline"
 TOOL_COMMANDS["kilocode"]="kilocode run"
 TOOL_COMMANDS["iflow"]="iflow run --config"
+TOOL_COMMANDS["gemini"]="gemini -p"
 
 # 任务到工具的映射
 declare -A TASK_MAPPING
@@ -90,6 +91,7 @@ TASK_MAPPING["pipeline"]="iflow"
 TASK_MAPPING["data"]="iflow"
 TASK_MAPPING["process"]="iflow"
 TASK_MAPPING["default"]="qwen"
+TASK_MAPPING["gemini"]="gemini"
 
 # ---------- 解析命令行参数 ----------
 COMMAND=""
@@ -458,6 +460,12 @@ execute_task() {
         iflow)
             iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
+        gemini)
+            # gemini 需要代理
+            export http_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+            export https_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+            gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
+            ;;
     esac
     
     # 提交
@@ -486,7 +494,7 @@ Ralph - AI Agent Loop with Load Balancing
 如果不传任务描述，则从 prd.json 读取任务列表执行。
 
 选项:
-  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow
+  --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow, gemini
   --project DIR         项目目录
   --max N               最大迭代次数 (默认: 10)
   --log-dir DIR         日志目录
@@ -580,6 +588,12 @@ execute_direct_task() {
                 ;;
             iflow)
                 iflow run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+                ;;
+            gemini)
+                # gemini 需要代理
+                export http_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+                export https_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+                gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
         esac
         
