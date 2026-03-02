@@ -69,25 +69,21 @@ VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
 
 # 工具命令映射
 declare -A TOOL_COMMANDS
-
 # 解析 qwen 路径
 QWEN_PATH=""
 if command -v qwen &> /dev/null; then
     QWEN_PATH=$(command -v qwen)
+elif [ -f "$HOME/.npm-global/bin/qwen" ]; then
+    QWEN_PATH="$HOME/.npm-global/bin/qwen"
 else
-    # 尝试 npm 全局安装
-    NPM_GLOBAL_BIN="$(npm root -g 2>/dev/null)/.bin"
-    if [ -f "$NPM_GLOBAL_BIN/qwen" ]; then
-        QWEN_PATH="$NPM_GLOBAL_BIN/qwen"
+    NPM_PREFIX="$(npm config get prefix 2>/dev/null)"
+    if [ -f "$NPM_PREFIX/bin/qwen" ]; then
+        QWEN_PATH="$NPM_PREFIX/bin/qwen"
+    else
+        QWEN_PATH="qwen"
     fi
 fi
 
-if [ -n "$QWEN_PATH" ]; then
-    TOOL_COMMANDS["qwen"]="$QWEN_PATH -p -y"
-else
-    TOOL_COMMANDS["qwen"]="qwen -p -y"  # Fallback to PATH
-fi
-TOOL_COMMANDS["opencode"]="opencode run --task"
 TOOL_COMMANDS["cline"]="cline"
 TOOL_COMMANDS["kilocode"]="kilocode run"
 TOOL_COMMANDS["iflow"]="iflow run --config"
@@ -486,7 +482,7 @@ execute_task() {
     # 执行任务
     case "$selected_tool" in
         qwen)
-            qwen -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
+            "$QWEN_PATH" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
             ;;
         opencode)
             opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
@@ -616,7 +612,7 @@ execute_direct_task() {
         
         case "$TOOL" in
             qwen)
-                qwen -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
+                "$QWEN_PATH" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
                 ;;
             opencode)
                 opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
