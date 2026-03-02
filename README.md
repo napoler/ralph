@@ -21,6 +21,9 @@ npx ralphy-spec init
 cp prd.json.example prd.json
 # 编辑 prd.json 添加你的任务
 
+# 生成 SPEC.md (可选 - Ralph 会自动生成)
+./generate-specs.sh
+
 # 运行 Ralph
 ./ralph.sh
 
@@ -36,14 +39,15 @@ cp prd.json.example prd.json
 ```
 ralph-fork/
 ├── specs/
-│   ├── active/           # 当前任务规格
+│   ├── active/           # 当前任务规格 (*.md)
 │   ├── archive/          # 已完成任务规格
 │   └── templates/        # 规格模板
 ├── prd.json              # 任务定义
 ├── progress.txt          # 进度日志
 ├── archive/              # 运行历史
 ├── ralph.sh              # 循环脚本
-└── prompt.md             # Agent 提示词
+├── prompt.md             # Agent 提示词
+└── generate-specs.sh     # SPEC.md 生成器
 ```
 
 ## SPECKit Workflow

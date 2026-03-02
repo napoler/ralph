@@ -29,6 +29,10 @@ while [[ $# -gt 0 ]]; do
       show_status
       exit 0
       ;;
+    spec|generate-specs)
+      generate_specs
+      exit 0
+      ;;
     *)
       if [[ "$1" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$1"
@@ -68,6 +72,13 @@ show_status() {
     jq -r '.userStories[] | select(.passes == false) | "- [\(.priority)] \(.id): \(.title)"' "$PRD_FILE"
   else
     echo "No prd.json found"
+  fi
+}
+
+# 生成 specs (如果还没有)
+generate_specs() {
+  if [ -f "$PRD_FILE" ]; then
+    "$SCRIPT_DIR/generate-specs.sh" "$PRD_FILE" "$SPECS_DIR" 2>/dev/null || true
   fi
 }
 
@@ -254,6 +265,9 @@ fi
 
 # 归档之前的运行
 archive_previous_run
+
+# 生成 specs
+generate_specs
 
 # 跟踪当前分支
 if [ -f "$PRD_FILE" ]; then
