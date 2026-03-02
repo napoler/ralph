@@ -69,7 +69,24 @@ VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
 
 # 工具命令映射
 declare -A TOOL_COMMANDS
-TOOL_COMMANDS["qwen"]="qwen -p -y"
+
+# 解析 qwen 路径
+QWEN_PATH=""
+if command -v qwen &> /dev/null; then
+    QWEN_PATH=$(command -v qwen)
+else
+    # 尝试 npm 全局安装
+    NPM_GLOBAL_BIN="$(npm root -g 2>/dev/null)/.bin"
+    if [ -f "$NPM_GLOBAL_BIN/qwen" ]; then
+        QWEN_PATH="$NPM_GLOBAL_BIN/qwen"
+    fi
+fi
+
+if [ -n "$QWEN_PATH" ]; then
+    TOOL_COMMANDS["qwen"]="$QWEN_PATH -p -y"
+else
+    TOOL_COMMANDS["qwen"]="qwen -p -y"  # Fallback to PATH
+fi
 TOOL_COMMANDS["opencode"]="opencode run --task"
 TOOL_COMMANDS["cline"]="cline"
 TOOL_COMMANDS["kilocode"]="kilocode run"
