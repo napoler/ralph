@@ -69,7 +69,7 @@ VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
 
 # 工具命令映射
 declare -A TOOL_COMMANDS
-TOOL_COMMANDS["qwen"]="qwen -p"
+TOOL_COMMANDS["qwen"]="qwen -p -y"
 TOOL_COMMANDS["opencode"]="opencode run --task"
 TOOL_COMMANDS["cline"]="cline"
 TOOL_COMMANDS["kilocode"]="kilocode run"
@@ -469,7 +469,7 @@ execute_task() {
     # 执行任务
     case "$selected_tool" in
         qwen)
-            qwen -p "$task_prompt" 2>&1 | tee -a "$log_file"
+            qwen -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
             ;;
         opencode)
             opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
@@ -599,7 +599,7 @@ execute_direct_task() {
         
         case "$TOOL" in
             qwen)
-                qwen -p "$task_prompt" 2>&1 | tee -a "$log_file"
+                qwen -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
                 ;;
             opencode)
                 opencode run --task="$task_prompt" 2>&1 | tee -a "$log_file"
