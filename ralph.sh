@@ -19,6 +19,7 @@ Ralph - AI Agent Loop with Load Balancing
 
 选项:
   --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow, gemini
+  --proxy URL            代理地址 (默认: http://192.168.123.194:20171)
   --project DIR         项目目录 (覆盖配置)
   --max N               最大迭代次数
   --log-dir DIR         日志目录
@@ -189,6 +190,15 @@ while [[ $# -gt 0 ]]; do
             
         --no-load-balance)
             LOAD_BALANCE="false"
+            shift
+            ;;
+            
+        --proxy)
+            RALPH_PROXY="$2"
+            shift 2
+            ;;
+        --proxy=*)
+            RALPH_PROXY="${1#*=}"
             shift
             ;;
             
@@ -462,8 +472,8 @@ execute_task() {
             ;;
         gemini)
             # gemini 需要代理
-            export http_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
-            export https_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+            export http_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
+            export https_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
             gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
     esac
@@ -495,6 +505,7 @@ Ralph - AI Agent Loop with Load Balancing
 
 选项:
   --tool AGENT          AI 工具: qwen, opencode, cline, kilocode, iflow, gemini
+  --proxy URL            代理地址 (默认: http://192.168.123.194:20171)
   --project DIR         项目目录
   --max N               最大迭代次数 (默认: 10)
   --log-dir DIR         日志目录
@@ -591,8 +602,8 @@ execute_direct_task() {
                 ;;
             gemini)
                 # gemini 需要代理
-                export http_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
-                export https_proxy="${RALPH_PROXY:-socks5://192.168.123.194:20170}"
+                export http_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
+                export https_proxy="${RALPH_PROXY:-http://192.168.123.194:20171}"
                 gemini -p "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
         esac
