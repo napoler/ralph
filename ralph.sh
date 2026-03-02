@@ -127,9 +127,9 @@ done
 
 # 工具命令映射
 declare -A TOOL_COMMANDS
-TOOL_COMMANDS["cline"]="${TOOL_PATHS[cline]}"
-TOOL_COMMANDS["kilocode"]="${TOOL_PATHS[kilocode]}"
-TOOL_COMMANDS["iflow"]="${TOOL_PATHS[iflow]}"
+TOOL_COMMANDS["cline"]="${TOOL_PATHS[cline]} -y"
+TOOL_COMMANDS["kilocode"]="${TOOL_PATHS[kilocode]} run --auto"
+TOOL_COMMANDS["iflow"]="${TOOL_PATHS[iflow]} -y"
 TOOL_COMMANDS["gemini"]="${TOOL_PATHS[gemini]} -p"
 
 # 任务到工具的映射
@@ -531,13 +531,13 @@ execute_task() {
             "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         cline)
-            "${TOOL_PATHS[cline]}" "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[cline]}" -y "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         kilocode)
-            "${TOOL_PATHS[kilocode]}" run "$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[kilocode]}" run --auto "$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         iflow)
-            "${TOOL_PATHS[iflow]}" run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+            "${TOOL_PATHS[iflow]}" -y run --config="$task_prompt" 2>&1 | tee -a "$log_file"
             ;;
         gemini)
             # gemini 需要代理 (从配置读取)
@@ -661,13 +661,13 @@ execute_direct_task() {
                 "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             cline)
-                "${TOOL_PATHS[cline]}" "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[cline]}" -y "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             kilocode)
-                "${TOOL_PATHS[kilocode]}" run "$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[kilocode]}" run --auto "$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             iflow)
-                "${TOOL_PATHS[iflow]}" run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+                "${TOOL_PATHS[iflow]}" -y run --config="$task_prompt" 2>&1 | tee -a "$log_file"
                 ;;
             gemini)
                 # gemini 需要代理 (从配置读取)
