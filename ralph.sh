@@ -29,6 +29,7 @@ Ralph - AI Agent Loop with Load Balancing
   --complete-signal SIG 完成信号 (默认: <promise>COMPLETE</promise>)
   
   status                显示任务状态
+  run                 执行 prd.json 中的所有任务
   spec                  生成 SPEC.md
   
 环境变量:
@@ -104,6 +105,10 @@ while [[ $# -gt 0 ]]; do
         # 主命令
         status|show)
             COMMAND="status"
+            shift
+            ;;
+        run)
+            COMMAND="run"
             shift
             ;;
         spec|generate-specs)
@@ -517,6 +522,7 @@ Ralph - AI Agent Loop with Load Balancing
   --task TASK           直接执行指定任务 (代替 prd.json)
   
   status                显示任务状态
+  run                 执行 prd.json 中的所有任务
   spec                  生成 SPEC.md
   -h, --help            显示帮助
 
@@ -645,6 +651,28 @@ main() {
         status)
             show_status
             exit 0
+            ;;
+        run)
+            # 执行所有 prd.json 中的任务
+            echo "=== Running all tasks from prd.json ==="
+            while true; do
+                local task_info=$(get_next_task)
+                if [ -z "$task_info" ]; then
+                    echo "All tasks completed!"
+                    exit 0
+                fi
+                local task_id=$(echo "$task_info" | cut -d'|' -f1)
+                local task_title=$(echo "$task_info" | cut -d'|' -f2-)
+                execute_task "$task_id" "$task_title" 1
+                
+                # 更新 prd.json
+                if [ -f "$PRD_FILE" ]; then
+                    local tmp_file=$(mktemp)
+                    jq --arg id "$task_id" '(.userStories[] | select(.id == $id)).passes = true' "$PRD_FILE" > "$tmp_file" && mv "$tmp_file" "$PRD_FILE"
+                fi
+                
+                sleep 2
+            done
             ;;
         spec)
             generate_specs
