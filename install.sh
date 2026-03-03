@@ -17,7 +17,9 @@ NC='\033[0m'
 RALPH_REPO="https://github.com/napoler/ralph.git"
 TARGET_DIR=""
 FORCE=""
+FORCE=""
 SKIP_DEPS=""
+INSTALL_SKILL_ONLY=""
 
 # 显示帮助
 if [[ "$1" =~ (-h|--help) ]]; then
@@ -32,6 +34,9 @@ Ralph 安装脚本
   --force              强制覆盖已存在的文件
   --skip-deps          跳过依赖检查
   --source-dir DIR     从本地目录安装 (用于开发)
+  --skill-only          只安装 Ralph Orchestration Skill
+
+示例:
 
 示例:
   # 安装到当前目录
@@ -68,6 +73,14 @@ while [[ $# -gt 0 ]]; do
             SOURCE_DIR="$2"
             shift 2
             ;;
+        --skill-only)
+            INSTALL_SKILL_ONLY="true"
+            shift
+            ;;
+        *)
+            SOURCE_DIR="$2"
+            shift 2
+            ;;
         *)
             TARGET_DIR="$1"
             shift
@@ -77,6 +90,44 @@ done
 
 # 默认目标目录
 if [ -z "$TARGET_DIR" ]; then
+    TARGET_DIR="$(pwd)"
+fi
+
+# Skill only 模式
+if [ "$INSTALL_SKILL_ONLY" = "true" ]; then
+    echo -e "${BLUE}╔═══════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║    Ralph Skill Installation Only            ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════╝${NC}"
+    echo ""
+    install_skill
+    exit 0
+fi
+
+# Skill only 模式 (在函数定义之后)
+
+# Skill only 模式 (在函数定义之后)
+
+# Skill only 模式 (在函数定义之后)
+if [ "$INSTALL_SKILL_ONLY" = "true" ]; then
+    echo -e "${BLUE}╔═══════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║    Ralph Skill Installation Only            ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════╝${NC}"
+    echo ""
+    install_skill
+    exit 0
+fi
+
+# Skill only 模式
+if [ "$INSTALL_SKILL_ONLY" = "true" ]; then
+    echo -e "${BLUE}╔═══════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║    Ralph Skill Installation Only            ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════╝${NC}"
+    echo ""
+    install_skill
+    exit 0
+fi
+
+echo -e "${BLUE}╔═══════════════════════════════════════════╗${NC}"
     TARGET_DIR="$(pwd)"
 fi
 
@@ -133,6 +184,53 @@ check_deps() {
     done
     
     echo -e "${GREEN}依赖检查完成${NC}"
+}
+
+# ============================================
+# 安装 Ralph Orchestration Skill
+# ============================================
+install_skill() {
+    local source_skill_dir="$TARGET_DIR/skills/ralph-orchestration"
+    local target_skill_dir="$HOME/.config/opencode/skills/ralph-orchestration"
+    
+    # 检查是否有 skill 源码
+    if [ ! -d "$source_skill_dir" ]; then
+        echo -e "${YELLOW}跳过: skill 源码不存在${NC}"
+        return 0
+    fi
+    
+    # 创建目标目录
+    mkdir -p "$(dirname "$target_skill_dir")"
+    
+    # 复制 skill 文件
+    echo -e "${GREEN}复制 skill 到: $target_skill_dir${NC}"
+    rm -rf "$target_skill_dir"
+    cp -r "$source_skill_dir" "$target_skill_dir"
+    
+    # 设置执行权限
+    chmod +x "$target_skill_dir/ralph-orchestration.sh" 2>/dev/null || true
+    chmod +x "$target_skill_dir/install-skill.sh" 2>/dev/null || true
+    
+    # 创建符号链接
+    local bin_dir="$HOME/.local/bin"
+    local link_path="$bin_dir/ralph"
+    
+    if [ ! -d "$bin_dir" ]; then
+        mkdir -p "$bin_dir"
+    fi
+    
+    if [ -L "$link_path" ]; then
+        rm "$link_path"
+    fi
+    
+    ln -s "$target_skill_dir/ralph-orchestration.sh" "$link_path"
+    chmod +x "$link_path"
+    
+    echo -e "${GREEN}✓ Ralph Orchestration Skill 安装完成!${NC}"
+    echo "  使用: ralph <任务>"
+}
+
+# 创建 ralph 目录
 }
 
 # 创建 ralph 目录
@@ -263,6 +361,55 @@ configure_project() {
 }
 
 # 显示完成信息
+
+# ============================================
+# 安装 Ralph Orchestration Skill
+# ============================================
+install_skill() {
+    echo ""
+    echo -e "${YELLOW}安装 Ralph Orchestration Skill...${NC}"
+    
+    local source_skill_dir="$TARGET_DIR/skills/ralph-orchestration"
+    local target_skill_dir="$HOME/.config/opencode/skills/ralph-orchestration"
+    
+    # 检查是否有 skill 源码
+    if [ ! -d "$source_skill_dir" ]; then
+        echo -e "${YELLOW}跳过: skill 源码不存在${NC}"
+        return 0
+    fi
+    
+    # 创建目标目录
+    mkdir -p "$(dirname "$target_skill_dir")"
+    
+    # 复制 skill 文件
+    echo -e "${GREEN}复制 skill 到: $target_skill_dir${NC}"
+    rm -rf "$target_skill_dir"
+    cp -r "$source_skill_dir" "$target_skill_dir"
+    
+    # 设置执行权限
+    chmod +x "$target_skill_dir/ralph-orchestration.sh" 2>/dev/null || true
+    chmod +x "$target_skill_dir/install-skill.sh" 2>/dev/null || true
+    
+    # 创建符号链接
+    local bin_dir="$HOME/.local/bin"
+    local link_path="$bin_dir/ralph"
+    
+    if [ ! -d "$bin_dir" ]; then
+        mkdir -p "$bin_dir"
+    fi
+    
+    if [ -L "$link_path" ]; then
+        rm "$link_path"
+    fi
+    
+    ln -s "$target_skill_dir/ralph-orchestration.sh" "$link_path"
+    chmod +x "$link_path"
+    
+    echo -e "${GREEN}✓ Ralph Orchestration Skill 安装完成!${NC}"
+    echo "  使用: ralph <任务>"
+}
+
+# 显示完成信息
 show_summary() {
     local ralph_dir="$TARGET_DIR/.ralph"
     
@@ -306,7 +453,14 @@ install_ralph
 init_tasks
 
 # 配置
+#KZ|# 配置
 configure_project
+
+# 安装 Skill
+install_skill
+
+# 完成
+show_summary
 
 # 完成
 show_summary
