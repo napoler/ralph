@@ -291,21 +291,87 @@ load_config() {
     # 优先使用指定配置文件，否则查找 ralph.conf
     local config_file="${CONFIG_FILE:-$SCRIPT_DIR/ralph.conf}"
     
+    # 保存是否从CLI传入参数的标记
+    local cli_tool_provided=false
+    local cli_max_provided=false
+    local cli_project_provided=false
+    local cli_log_provided=false
+    local cli_worktree_provided=false
+    local cli_base_provided=false
+    local cli_load_balance_provided=false
+    local cli_complete_provided=false
+    
+    # 同时保存CLI传入的值（用于后续恢复）
+    local saved_tool="$TOOL"
+    local saved_max="$MAX_ITERATIONS"
+    local saved_project="$PROJECT_DIR"
+    local saved_log="$LOG_DIR"
+    local saved_worktree="$WORKTREE_ROOT"
+    local saved_base="$BASE_BRANCH"
+    local saved_load_balance="$LOAD_BALANCE"
+    local saved_complete="$COMPLETE_SIGNAL"
+    local saved_proxy="$PROXY"
+    
+    # 保存用户设置的环境变量
+    local env_project_dir="$RALPH_PROJECT_DIR"
+    local env_tool="$RALPH_TOOL"
+    local env_max_iterations="$RALPH_MAX_ITERATIONS"
+    local env_log_dir="$RALPH_LOG_DIR"
+    local env_worktree_root="$RALPH_WORKTREE_ROOT"
+    local env_base_branch="$RALPH_BASE_BRANCH"
+    local env_load_balance="$RALPH_LOAD_BALANCE"
+    local env_complete_signal="$RALPH_COMPLETE_SIGNAL"
+    local env_proxy="$RALPH_PROXY"
+    
+    # 如果变量值不同于默认值，说明是CLI传入的
+    [ "$TOOL" != "qwen" ] && cli_tool_provided=true
+    [ "$MAX_ITERATIONS" != "10" ] && cli_max_provided=true
+    [ -n "$PROJECT_DIR" ] && cli_project_provided=true
+    [ -n "$LOG_DIR" ] && cli_log_provided=true
+    [ "$WORKTREE_ROOT" != "/mnt/data/dev/tmp" ] && cli_worktree_provided=true
+    [ "$BASE_BRANCH" != "dev" ] && cli_base_provided=true
+    [ "$LOAD_BALANCE" != "true" ] && cli_load_balance_provided=true
+    [ "$COMPLETE_SIGNAL" != "<promise>COMPLETE</promise>" ] && cli_complete_provided=true
+    [ -n "$PROXY" ] && cli_proxy_provided=true
+    
+    # 在 source 配置文件之前，先清除配置文件可能设置的 RALPH_* 变量
+    # 这样可以区分"用户设置的环境变量"和"配置文件默认值"
+    unset RALPH_PROJECT_DIR RALPH_TOOL RALPH_MAX_ITERATIONS RALPH_LOG_DIR
+    unset RALPH_WORKTREE_ROOT RALPH_BASE_BRANCH RALPH_LOAD_BALANCE
+    unset RALPH_COMPLETE_SIGNAL RALPH_PROXY
+    
     if [ -f "$config_file" ]; then
         source "$config_file"
         echo "[RALPH] ✓ Loaded config: $config_file"
     fi
     
-    # 环境变量覆盖配置文件
-    [ -n "$RALPH_PROJECT_DIR" ] && PROJECT_DIR="$RALPH_PROJECT_DIR"
-    [ -n "$RALPH_TOOL" ] && TOOL="$RALPH_TOOL"
-    [ -n "$RALPH_MAX_ITERATIONS" ] && MAX_ITERATIONS="$RALPH_MAX_ITERATIONS"
-    [ -n "$RALPH_LOG_DIR" ] && LOG_DIR="$RALPH_LOG_DIR"
-    [ -n "$RALPH_WORKTREE_ROOT" ] && WORKTREE_ROOT="$RALPH_WORKTREE_ROOT"
-    [ -n "$RALPH_BASE_BRANCH" ] && BASE_BRANCH="$RALPH_BASE_BRANCH"
-    [ -n "$RALPH_LOAD_BALANCE" ] && LOAD_BALANCE="$RALPH_LOAD_BALANCE"
-    [ -n "$RALPH_COMPLETE_SIGNAL" ] && COMPLETE_SIGNAL="$RALPH_COMPLETE_SIGNAL"
-    [ -n "$RALPH_PROXY" ] && PROXY="$RALPH_PROXY"
+    # 命令行参数优先于配置文件（恢复保存的CLI值）
+    $cli_tool_provided && TOOL="$saved_tool"
+    $cli_max_provided && MAX_ITERATIONS="$saved_max"
+    $cli_project_provided && PROJECT_DIR="$saved_project"
+    $cli_log_provided && LOG_DIR="$saved_log"
+    $cli_worktree_provided && WORKTREE_ROOT="$saved_worktree"
+    $cli_base_provided && BASE_BRANCH="$saved_base"
+    $cli_load_balance_provided && LOAD_BALANCE="$saved_load_balance"
+    $cli_complete_provided && COMPLETE_SIGNAL="$saved_complete"
+    $cli_proxy_provided && PROXY="$saved_proxy"
+    
+    # 环境变量覆盖配置文件（仅当CLI未传入时）
+    $cli_proxy_provided && PROXY="$PROXY"
+    
+    [ -n "$env_project_dir" ] && ! $cli_project_provided && PROJECT_DIR="$env_project_dir"
+    [ -n "$env_tool" ] && ! $cli_tool_provided && TOOL="$env_tool"
+    [ -n "$env_max_iterations" ] && ! $cli_max_provided && MAX_ITERATIONS="$env_max_iterations"
+    [ -n "$env_log_dir" ] && ! $cli_log_provided && LOG_DIR="$env_log_dir"
+    [ -n "$env_worktree_root" ] && ! $cli_worktree_provided && WORKTREE_ROOT="$env_worktree_root"
+    [ -n "$env_base_branch" ] && ! $cli_base_provided && BASE_BRANCH="$env_base_branch"
+    [ -n "$env_load_balance" ] && ! $cli_load_balance_provided && LOAD_BALANCE="$env_load_balance"
+    [ -n "$env_complete_signal" ] && ! $cli_complete_provided && COMPLETE_SIGNAL="$env_complete_signal"
+    [ -n "$env_proxy" ] && ! $cli_proxy_provided && PROXY="$env_proxy"
+    
+    # 如果没有设置 PROJECT_DIR，使用默认值
+    
+
     
     # 如果没有设置 PROJECT_DIR，使用默认值
     if [ -z "$PROJECT_DIR" ]; then
