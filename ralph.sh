@@ -378,6 +378,20 @@ load_config() {
         PROJECT_DIR="/mnt/data/dev/decentralized-box"
     fi
     
+    # 初始化目录 - 优先使用 PROJECT_DIR，否则使用 SCRIPT_DIR
+    PRD_FILE="$PROJECT_DIR/prd.json"
+    PROGRESS_FILE="$PROJECT_DIR/progress.txt"
+    ARCHIVE_DIR="$PROJECT_DIR/archive"
+    SPECS_DIR="$PROJECT_DIR/specs/active"
+    
+    # LOG_DIR 默认值
+    if [ -z "$LOG_DIR" ]; then
+        LOG_DIR="/mnt/data/dev/tmp/ralph-$(date +%Y%m%d)/logs"
+    fi
+    if [ -z "$PROJECT_DIR" ]; then
+        PROJECT_DIR="/mnt/data/dev/decentralized-box"
+    fi
+    
     # 初始化目录
     PRD_FILE="$SCRIPT_DIR/prd.json"
     PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
