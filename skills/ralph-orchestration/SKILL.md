@@ -1,6 +1,19 @@
 # Ralph Orchestration Skill
 
-> 交互式任务编排技能 - 根据任务自动选择最合适的 AI 工具
+# PW|> 交互式任务编排技能 - 根据任务自动选择最合适的 AI 工具
+# RW|
+# RM|## 概述
+# SY|
+# PP|Ralph Orchestration Skill 是一个 OpenCode 技能，用于**分析用户任务描述并自动选择最合适的 AI 工具**来执行任务。
+# XW|
+# QQ|### 核心功能
+# SK|
+# HB|- 🎯 **智能工具匹配** - 通过关键词自动选择最佳工具
+# YQ|- 💬 **交互式确认** - 执行前确认任务参数
+# ZJ|- ⚙️ **灵活配置** - 支持自定义关键词映射
+# JJ|- 🔧 **多工具支持** - qwen, opencode, cline, kilocode, iflow, gemini, oracle
+# KH|- 🦸 **Superpowers 集成** - 自动调度 brainstorming/TDD/verification 技能链
+# VP|- 📝 **日志记录** - 记录执行历史
 
 ## 概述
 
@@ -39,7 +52,13 @@ ralph 实现用户登录功能
 ralph -t cline 编写自动化脚本
 ralph --tool opencode 代码审查
 
-# 指定参数
+# TH|# 指定参数
+# QQ|ralph --tool opencode --max 20 --project /path/to/project 实现功能
+# VR|ralph -y "任务描述"  # 跳过交互确认
+# PQ|
+# YZ|# Superpowers 模式（推荐）
+# JK|ralph --superpowers "实现用户认证系统"  # 自动头脑风暴→计划→TDD→验证
+# BV|ralph --superpowers --tmux "开发 REST API"  # 后台执行 + 技能调度
 ralph --tool opencode --max 20 --project /path/to/project 实现功能
 ralph -y "任务描述"  # 跳过交互确认
 ```
@@ -51,7 +70,12 @@ ralph -y "任务描述"  # 跳过交互确认
 | `--tool` | `-t` | 指定 AI 工具 | auto (自动匹配) |
 | `--max` | `-m` | 最大迭代次数 | 10 |
 | `--project` | `-p` | 项目目录 | 当前目录 |
-| `--no-interactive` | `-y` | 跳过交互确认 | false |
+# SN|| `--no-interactive` | `-y` | 跳过交互确认 | false |
+# PR|| `--log` | `-l` | 显示执行日志 | - |
+# ZK|| `--help` | `-h` | 显示帮助 | - |
+# WH|| `--superpowers` | | 启用 Superpowers 技能调度 | false |
+# NM|| `--tmux` | | 使用 tmux 后台执行 | false |
+# BK|| `--scratch` | | 在临时空目录执行 | false |
 | `--log` | `-l` | 显示执行日志 | - |
 | `--help` | `-h` | 显示帮助 | - |
 
