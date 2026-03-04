@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
-# Superpowers 技能自动调度器
+# Superpowers 技能自动调度器 v2.0
 # 
-# 根据任务类型自动选择并调用合适的 Superpowers 技能
+# 智能判断任务复杂度，自动决定是否使用 Superpowers 模式
 # ============================================================
 
 set -euo pipefail
@@ -52,7 +52,7 @@ identify_task_type() {
     fi
     
     # Bug 修复（需要 debugging + TDD）
-    if [[ "$task_lower" =~ (修复|bug|错误|问题|fail|fix|repair|debug) ]]; then
+    if [[ "$task_lower" =~ (修复|bug|错误|问题 |fail|fix|repair|debug) ]]; then
         echo "bugfix"
         return 0
     fi
@@ -86,6 +86,161 @@ identify_task_type() {
 }
 
 # ============================================================
+# 任务复杂度评估 (v2.0 新增)
+# ============================================================
+
+# 复杂度评分项
+declare -A COMPLEXITY_SCORES=(
+    # 高复杂度模式 (+3)
+    "系统":3 "架构":3 "设计":3 "framework":3 "architecture":3 "system":3
+    "集成":3 "整合":3 "integrate":3 "integration":3
+    "多模块":3 "多组件":3 "multi-module":3 "multi-component":3
+    "完整":3 "end-to-end":3 "full":3
+    
+    # 中复杂度模式 (+2)
+    "功能":2 "feature":2 "module":2 "component":2
+    "API":2 "接口":2 "endpoint":2 "service":2
+    "数据库":2 "database":2 "model":2 "schema":2
+    "认证":2 "auth":2 "security":2 "permission":2
+    "异步":2 "async":2 "concurrent":2 "parallel":2
+    
+    # 低复杂度模式 (+1)
+    "修复":1 "fix":1 "bug":1 "error":1 "issue":1
+    "添加":1 "add":1 "create":1 "new":1
+    "更新":1 "update":1 "modify":1 "change":1
+    "优化":1 "optimize":1 "improve":1 "refactor":1
+    "脚本":1 "script":1 "tool":1 "util":1
+)
+
+# 评估任务复杂度
+evaluate_complexity() {
+    local task="$1"
+    local task_lower=$(echo "$task" | tr '[:upper:]' '[:lower:]')
+    local score=0
+    local indicators=()
+    
+    # 长度评分（长任务通常更复杂）
+    local word_count=$(echo "$task" | wc -w)
+    if [[ $word_count -gt 20 ]]; then
+        score=$((score + 2))
+        indicators+=("长度>20 词")
+    elif [[ $word_count -gt 10 ]]; then
+        score=$((score + 1))
+        indicators+=("长度>10 词")
+    fi
+    
+    # 关键词匹配评分
+    for keyword in "${!COMPLEXITY_SCORES[@]}"; do
+        if echo "$task_lower" | grep -qi "$keyword"; then
+            local points="${COMPLEXITY_SCORES[$keyword]}"
+            score=$((score + points))
+            indicators+=("$keyword(+$points)")
+        fi
+    done
+    
+    # 检查是否涉及多个文件/模块
+    if echo "$task_lower" | grep -qiE "(多个 | 所有|all|multiple|across|throughout)"; then
+        score=$((score + 2))
+        indicators+=("多文件")
+    fi
+    
+    # 检查是否需要测试
+    if echo "$task_lower" | grep -qiE "(测试|test|确保|ensure|verify|validate)"; then
+        score=$((score + 1))
+        indicators+=("需测试")
+    fi
+    
+    # 输出结果
+    local indicators_str=$(IFS=','; echo "${indicators[*]}")
+    echo "$score|$indicators_str"
+}
+
+# ============================================================
+# 智能决策：是否需要 Superpowers
+# ============================================================
+
+should_use_superpowers() {
+    local task="$1"
+    local task_type="$2"
+    
+    # 特定任务类型总是需要 Superpowers
+    case "$task_type" in
+        creative|bugfix|refactor)
+            echo "true|auto_type:$task_type"
+            return 0
+            ;;
+    esac
+    
+    # 评估复杂度
+    local result=$(evaluate_complexity "$task")
+    local score="${result%|*}"
+    local indicators="${result#*|}"
+    
+    # 阈值判断
+    if [[ $score -ge 4 ]]; then
+        echo "true|complexity:$score($indicators)"
+    elif [[ $score -ge 2 ]]; then
+        # 中等复杂度，建议但不强制
+        echo "suggested|complexity:$score($indicators)"
+    else
+        echo "false|simple:$score"
+    fi
+}
+
+# ============================================================
+# 显示 Superpowers 智能建议
+# ============================================================
+
+show_superpowers_suggestion() {
+    local task="$1"
+    local task_type="$2"
+    local decision_result="$3"
+    
+    local use_sp="${decision_result%%|*}"
+    local reason="${decision_result#*|}"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}🦸 Superpowers 智能决策${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    case "$use_sp" in
+        true)
+            echo -e "${GREEN}✓ 自动启用 Superpowers 模式${NC}"
+            echo -e "${BLUE}决策理由:${NC} $reason"
+            echo -e "${BLUE}任务类型:${NC} $task_type"
+            echo ""
+            echo "将自动调度以下技能链:"
+            case "$task_type" in
+                creative)   echo "  📋 brainstorming → 📝 writing-plans → 🧪 TDD → ✅ verification" ;;
+                bugfix)     echo "  🔍 systematic-debugging → 🧪 TDD → ✅ verification" ;;
+                refactor)   echo "  📋 brainstorming → 📝 writing-plans → 🧪 TDD" ;;
+                review)     echo "  🔎 requesting-code-review" ;;
+                testing)    echo "  🧪 test-driven-development" ;;
+                *)          echo "  🔄 根据任务动态选择" ;;
+            esac
+            echo ""
+            echo -e "${GREEN}→ 正在注入 Superpowers 技能...${NC}"
+            ;;
+        suggested)
+            echo -e "${YELLOW}⚠ 建议但不强制使用 Superpowers 模式${NC}"
+            echo -e "${BLUE}决策理由:${NC} $reason"
+            echo ""
+            echo "可以使用 --superpowers 强制启用，或直接执行使用默认模式"
+            ;;
+        false)
+            echo -e "${BLUE}ℹ 任务较简单，使用标准模式${NC}"
+            echo -e "${BLUE}决策理由:${NC} $reason"
+            echo ""
+            echo "直接执行即可，如需使用 Superpowers 可添加 --superpowers 参数"
+            ;;
+    esac
+    
+    echo ""
+}
+
+# ============================================================
 # 技能调度决策
 # ============================================================
 
@@ -95,31 +250,24 @@ dispatch_skills() {
     
     case "$task_type" in
         creative)
-            # 创造性任务：完整工作流
             dispatch_creative_workflow "$task"
             ;;
         bugfix)
-            # Bug 修复：debugging + TDD
             dispatch_bugfix_workflow "$task"
             ;;
         refactor)
-            # 重构：分析 + TDD
             dispatch_refactor_workflow "$task"
             ;;
         review)
-            # 审查：code review
             dispatch_review_workflow "$task"
             ;;
         documentation)
-            # 文档：writing skills
             dispatch_documentation_workflow "$task"
             ;;
         testing)
-            # 测试：TDD
             dispatch_testing_workflow "$task"
             ;;
         general)
-            # 通用：基础工作流
             dispatch_general_workflow "$task"
             ;;
     esac
@@ -135,7 +283,6 @@ dispatch_creative_workflow() {
     log INFO "任务类型：创造性开发"
     log INFO "调度技能链：brainstorming → writing-plans → TDD → verification"
     
-    # 输出技能调用指令
     cat << EOF
 [技能调度：创造性工作流]
 
@@ -351,14 +498,14 @@ dispatch_general_workflow() {
 根据任务复杂度自动选择:
 
 - 复杂任务 → brainstorming → writing-plans → TDD
-- 简单任务 → TDD → verification
+- 简单任务 → 直接执行
 - 咨询任务 → 直接回答
 
 EOF
 }
 
 # ============================================================
-# 主函数
+# 主函数 - 智能模式
 # ============================================================
 
 main() {
@@ -372,8 +519,25 @@ main() {
     # 识别任务类型
     local task_type=$(identify_task_type "$task")
     
-    # 调度技能
-    dispatch_skills "$task_type" "$task"
+    # 智能决策
+    local decision=$(should_use_superpowers "$task" "$task_type")
+    
+    # 显示建议
+    show_superpowers_suggestion "$task" "$task_type" "$decision"
+    
+    # 根据决策执行
+    local use_sp="${decision%%|*}"
+    
+    if [[ "$use_sp" == "true" ]]; then
+        # 自动执行技能调度
+        dispatch_skills "$task_type" "$task"
+    elif [[ "$use_sp" == "suggested" ]]; then
+        # 显示建议，不自动执行
+        echo -e "${YELLOW}⚠ 如需使用 Superpowers，请添加 --superpowers 参数重新运行${NC}"
+    else
+        # 简单任务，直接执行
+        echo -e "${GREEN}✓ 任务简单，直接执行即可${NC}"
+    fi
 }
 
 # 执行

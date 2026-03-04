@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
-# Ralph Orchestration Skill - Enhanced with Superpowers
+# Ralph Orchestration Skill v2.1 - 智能 Superpowers
 # 
 # 交互式任务编排 - 分析用户任务并调用 ralph.sh
-# 集成 Superpowers 技能自动调度
+# 集成智能 Superpowers 自动判断
 # ============================================================
 
 set -euo pipefail
@@ -27,6 +27,7 @@ TASK=""
 INTERACTIVE=true
 RALPH_PATH=""
 USE_SUPERPOWERS=false
+USE_SUPERPOWERS_AUTO=true  # 默认启用自动判断
 USE_TMUX=false
 USE_SCRATCH=false
 
@@ -71,7 +72,7 @@ log() {
 # ============================================================
 show_help() {
     cat << EOF
-${BOLD}Ralph Orchestration Skill${NC}
+${BOLD}Ralph Orchestration Skill v2.1${NC}
 
 ${CYAN}用法:${NC}
   /ralph <任务描述>
@@ -79,29 +80,34 @@ ${CYAN}用法:${NC}
   /ralph --tool <tool> --max <n> --project <path> <任务>
 
 ${CYAN}参数:${NC}
-  -t, --tool <TOOL>      AI 工具：${VALID_TOOLS[*]}
-  -m, --max <N>         最大迭代次数 (默认：10)
-  -p, --project <DIR>  项目目录
-  -y, --no-interactive  跳过交互式确认
-  --superpowers         启用 Superpowers 技能自动调度
-  --tmux               使用 tmux 后台执行
-  --scratch            在临时空目录执行
-  -l, --log             显示日志
-  -h, --help            显示帮助
+  -t, --tool <TOOL>         AI 工具：${VALID_TOOLS[*]}
+  -m, --max <N>            最大迭代次数 (默认：10)
+  -p, --project <DIR>     项目目录
+  -y, --no-interactive     跳过交互式确认
+  --superpowers            强制启用 Superpowers 技能调度
+  --auto-superpowers       自动判断是否启用 Superpowers (默认)
+  --no-superpowers         禁用 Superpowers
+  --tmux                  使用 tmux 后台执行
+  --scratch               在临时空目录执行
+  -l, --log               显示日志
+  -h, --help              显示帮助
 
 ${CYAN}示例:${NC}
   /ralph 帮我修复登录 bug
   /ralph -t cline 编写自动化部署脚本
-  /ralph --superpowers --tmux "实现用户认证"
+  /ralph --superpowers "实现用户认证系统"  # 强制使用
+  /ralph --auto-superpowers "简单任务"    # 自动判断
   /ralph -y 代码审查  # 自动执行，不交互确认
 
-${CYAN}关键词映射:${NC}
-  shell/bash/script  → cline
-  review/refactor    → opencode
-  pr/github          → kilocode
-  deploy/workflow   → iflow
-  architecture      → oracle
-  其他              → qwen (负载均衡)
+${CYAN}Superpowers 智能判断:${NC}
+  默认情况下，Ralph 会自动分析任务复杂度：
+  - 复杂任务 (实现/开发/修复) → 自动启用 Superpowers
+  - 简单任务 (查询/帮助) → 直接执行
+  
+  Superpowers 技能链:
+  - creative → brainstorming → writing-plans → TDD → verification
+  - bugfix → systematic-debugging → TDD → verification
+  - refactor → brainstorming → writing-plans → TDD
 
 ${CYAN}更多信息:${NC}
   参见 SKILL.md
@@ -217,6 +223,35 @@ show_tool_info() {
 }
 
 # ============================================================
+# Superpowers 智能评估
+# ============================================================
+auto_evaluate_superpowers() {
+    log INFO "自动评估是否需要 Superpowers"
+    
+    if [[ ! -f "$DISPATCHER_SCRIPT" ]]; then
+        log WARN "技能调度器未找到，无法自动评估"
+        echo "false"
+        return
+    fi
+    
+    # 调用调度器进行智能评估（只获取建议，不执行）
+    local evaluation=$(bash "$DISPATCHER_SCRIPT" "$TASK" 2>&1)
+    
+    # 判断是否需要 Superpowers
+    if echo "$evaluation" | grep -q "✓ 自动启用 Superpowers 模式"; then
+        log INFO "智能评估：需要 Superpowers"
+        echo "true"
+    elif echo "$evaluation" | grep -q "任务较简单"; then
+        log INFO "智能评估：不需要 Superpowers (简单任务)"
+        echo "false"
+    else
+        # 默认不启用
+        log INFO "智能评估：默认不启用"
+        echo "false"
+    fi
+}
+
+# ============================================================
 # Superpowers 技能注入
 # ============================================================
 inject_superpowers_prompt() {
@@ -320,7 +355,13 @@ interactive_qa() {
     echo -e "   迭代次数：${GREEN}$MAX_ITERATIONS${NC}"
     echo -e "   项目目录：${GREEN}${PROJECT_DIR:-当前目录}${NC}"
     if $USE_SUPERPOWERS; then
-        echo -e "   Superpowers: ${GREEN}已启用${NC}"
+        if $USE_SUPERPOWERS_AUTO; then
+            echo -e "   Superpowers: ${GREEN}已启用 (自动判断)${NC}"
+        else
+            echo -e "   Superpowers: ${GREEN}已启用 (手动)${NC}"
+        fi
+    else
+        echo -e "   Superpowers: ${YELLOW}未启用${NC}"
     fi
     echo ""
     echo -e "${CYAN}📌 操作:${NC}"
@@ -409,9 +450,74 @@ show_banner() {
 ╚██████╔╝██║     ██║     ███████╗██║██║ ╚████║███████╗
  ╚═════╝ ╚═╝     ╚═╝     ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
                                                       
- Ralph Orchestration Skill v2.0.0 (with Superpowers)
+ Ralph Orchestration Skill v2.1 (智能 Superpowers)
 
 EOF
+}
+
+# ============================================================
+# 解析参数
+# ============================================================
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--tool)
+                TOOL="$2"
+                shift 2
+                ;;
+            -m|--max)
+                MAX_ITERATIONS="$2"
+                shift 2
+                ;;
+            -p|--project)
+                PROJECT_DIR="$2"
+                shift 2
+                ;;
+            -y|--no-interactive)
+                INTERACTIVE=false
+                shift
+                ;;
+            --superpowers)
+                USE_SUPERPOWERS=true
+                USE_SUPERPOWERS_AUTO=false
+                shift
+                ;;
+            --auto-superpowers)
+                USE_SUPERPOWERS_AUTO=true
+                shift
+                ;;
+            --no-superpowers)
+                USE_SUPERPOWERS=false
+                USE_SUPERPOWERS_AUTO=false
+                shift
+                ;;
+            --tmux)
+                USE_TMUX=true
+                shift
+                ;;
+            --scratch)
+                USE_SCRATCH=true
+                shift
+                ;;
+            -l|--log)
+                show_log
+                exit 0
+                ;;
+            -h|--help|help)
+                show_help
+                exit 0
+                ;;
+            -*)
+                log ERROR "未知选项：$1"
+                show_help
+                exit 1
+                ;;
+            *)
+                TASK="$1"
+                shift
+                ;;
+        esac
+    done
 }
 
 # ============================================================
@@ -449,6 +555,14 @@ main() {
     
     echo -e "${GREEN}✓${NC} 选中工具：$(show_tool_info "$TOOL")"
     
+    # Superpowers 智能判断
+    if $USE_SUPERPOWERS_AUTO; then
+        log INFO "使用 Superpowers 自动判断模式"
+        if $(auto_evaluate_superpowers); then
+            USE_SUPERPOWERS=true
+        fi
+    fi
+    
     # Superpowers 技能调度
     if $USE_SUPERPOWERS; then
         log INFO "启用 Superpowers 技能自动调度"
@@ -474,59 +588,6 @@ main() {
     
     # 执行
     execute_ralph "$TOOL" "$MAX_ITERATIONS" "$PROJECT_DIR" "$TASK"
-}
-
-# 解析参数函数
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -t|--tool)
-                TOOL="$2"
-                shift 2
-                ;;
-            -m|--max)
-                MAX_ITERATIONS="$2"
-                shift 2
-                ;;
-            -p|--project)
-                PROJECT_DIR="$2"
-                shift 2
-                ;;
-            -y|--no-interactive)
-                INTERACTIVE=false
-                shift
-                ;;
-            --superpowers)
-                USE_SUPERPOWERS=true
-                shift
-                ;;
-            --tmux)
-                USE_TMUX=true
-                shift
-                ;;
-            --scratch)
-                USE_SCRATCH=true
-                shift
-                ;;
-            -l|--log)
-                show_log
-                exit 0
-                ;;
-            -h|--help|help)
-                show_help
-                exit 0
-                ;;
-            -*)
-                log ERROR "未知选项：$1"
-                show_help
-                exit 1
-                ;;
-            *)
-                TASK="$1"
-                shift
-                ;;
-        esac
-    done
 }
 
 main "$@"
