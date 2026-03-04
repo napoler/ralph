@@ -1,0 +1,53 @@
+# ============================================================
+# Ralph Orchestration Skill 配置
+# ============================================================
+
+# 默认工具
+# 可选：qwen, opencode, cline, kilocode, iflow, gemini, claude, codex, pi
+tool: opencode
+
+# 最大迭代次数
+# 建议：小任务 5-10, 中等任务 10-20, 大任务 20-30
+max_iterations: 20
+
+# 项目目录 (可选，可从命令行覆盖)
+# 留空表示使用当前目录
+project_dir: ""
+
+# 是否使用 tmux 后台执行
+# true = 始终使用 tmux (推荐)
+# false = 直接执行
+use_tmux: true
+
+# 是否启用 Superpowers 框架
+# true = 强制 AI 遵循 TDD, brainstorming, verification 等流程
+# false = 不强制 (不推荐)
+superpowers: true
+
+# Scratch 模式
+# true = 始终在临时空目录执行 (适合小任务)
+# false = 在项目目录执行 (默认)
+scratch: false
+
+# 日志级别
+# DEBUG, INFO, WARN, ERROR
+log_level: INFO
+
+# 完成信号
+# 用于检测 AI 任务完成
+complete_signal: "<promise>COMPLETE</promise>"
+
+# 代理设置 (如需要)
+# proxy: "http://192.168.123.194:20171"
+
+# 基础分支
+# 创建工作树时使用
+base_branch: dev
+
+# 工作树根目录
+# 默认在项目下创建 .ralph/tmp
+worktree_root: ".ralph/tmp"
+
+# 日志目录
+# 默认在项目下创建 .ralph/logs
+log_dir: ".ralph/logs"
