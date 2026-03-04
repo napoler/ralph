@@ -616,10 +616,10 @@ build_tool_cmd() {
 
     case "$tool" in
         qwen) cmd="${TOOL_PATHS[qwen]} -p '$prompt' -y" ;;
-        opencode) cmd="${TOOL_PATHS[opencode]} run --task='$prompt'" ;;
+        opencode) cmd="${TOOL_PATHS[opencode]} run '$prompt'" ;;
         cline) cmd="${TOOL_PATHS[cline]} -y '$prompt'" ;;
-        kilocode) cmd="${TOOL_PATHS[kilocode]} run --auto '$prompt'" ;;
-        iflow) cmd="${TOOL_PATHS[iflow]} -y run --config='$prompt'" ;;
+        kilocode) cmd="${TOOL_PATHS[kilocode]} --prompt='$prompt' --auto" ;;
+        iflow) cmd="${TOOL_PATHS[iflow]} -p '$prompt' -y" ;;
         gemini) cmd="$prefix${TOOL_PATHS[gemini]} -p -y '$prompt'" ;;
         codex) cmd="${TOOL_PATHS[codex]} --yolo '$prompt'" ;;
         claude) cmd="${TOOL_PATHS[claude]} '$prompt'" ;;
@@ -943,16 +943,16 @@ execute_direct_task() {
                 tool_cmd="${TOOL_PATHS[qwen]} -p \"$task_prompt\" -y"
                 ;;
             opencode)
-                tool_cmd="${TOOL_PATHS[opencode]} run --task=\"$task_prompt\""
+                tool_cmd="${TOOL_PATHS[opencode]} run \"$task_prompt\""
                 ;;
             cline)
                 tool_cmd="${TOOL_PATHS[cline]} -y \"$task_prompt\""
                 ;;
             kilocode)
-                tool_cmd="${TOOL_PATHS[kilocode]} run --auto \"$task_prompt\""
+                tool_cmd="${TOOL_PATHS[kilocode]} --prompt=\"$task_prompt\" --auto"
                 ;;
             iflow)
-                tool_cmd="${TOOL_PATHS[iflow]} -y run --config=\"$task_prompt\""
+                tool_cmd="${TOOL_PATHS[iflow]} -p \"$task_prompt\" -y"
                 ;;
             gemini)
                 [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
