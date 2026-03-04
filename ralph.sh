@@ -741,7 +741,8 @@ execute_task() {
     if [ "$USE_TMUX" = "true" ]; then
         run_in_tmux "ralph_${task_id}_${timestamp}" "$worktree_dir" "$raw_cmd" "$log_file"
     else
-        eval "$raw_cmd" 2>&1 | tee -a "$log_file"
+        # 使用超时重试执行（默认 3 次重试，180 秒超时）
+        execute_with_retry "$raw_cmd" "$log_file" 3 180
     fi
     
     # 提交
@@ -936,28 +937,31 @@ execute_direct_task() {
         echo ""
         echo "--- Iteration $i / $MAX_ITERATIONS ---"
         
+        local tool_cmd=""
         case "$TOOL" in
             qwen)
-                "${TOOL_PATHS[qwen]}" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[qwen]} -p \"$task_prompt\" -y"
                 ;;
             opencode)
-                "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[opencode]} run --task=\"$task_prompt\""
                 ;;
             cline)
-                "${TOOL_PATHS[cline]}" -y "$task_prompt" 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[cline]} -y \"$task_prompt\""
                 ;;
             kilocode)
-                "${TOOL_PATHS[kilocode]}" run --auto "$task_prompt" 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[kilocode]} run --auto \"$task_prompt\""
                 ;;
             iflow)
-                "${TOOL_PATHS[iflow]}" -y run --config="$task_prompt" 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[iflow]} -y run --config=\"$task_prompt\""
                 ;;
             gemini)
-                # gemini 需要代理 (从配置读取)
                 [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-                "${TOOL_PATHS[gemini]}" -p -y "$task_prompt" 2>&1 | tee -a "$log_file"
+                tool_cmd="${TOOL_PATHS[gemini]} -p -y \"$task_prompt\""
                 ;;
         esac
+        
+        # 使用超时重试执行（默认 3 次重试，180 秒超时）
+        execute_with_retry "$tool_cmd" "$log_file" 3 180
         
         # 检查完成信号
         if grep -q "$COMPLETE_SIGNAL" "$log_file" 2>/dev/null; then
@@ -985,6 +989,76 @@ execute_direct_task() {
     echo "⚠️ Max iterations reached: $MAX_ITERATIONS"
     return 1
 }
+
+# ============================================
+# 超时重试执行函数（解决 API 超时问题）
+# ============================================
+
+# 带超时重试的执行函数
+execute_with_retry() {
+    local tool_cmd="$1"
+    local log_file="$2"
+    local max_retries="${3:-3}"
+    local timeout_seconds="${4:-180}"  # 默认 180 秒超时
+    
+    local attempt=1
+    local success=false
+    
+    while [ $attempt -le $max_retries ] && [ "$success" = "false" ]; do
+        echo "[Attempt $attempt/$max_retries] Executing with ${timeout_seconds}s timeout..." | tee -a "$log_file"
+        
+        # 使用 timeout 命令包装执行
+        if timeout "$timeout_seconds" bash -c "$tool_cmd" 2>&1 | tee -a "$log_file"; then
+            success=true
+            echo "[Success] Completed on attempt $attempt" | tee -a "$log_file"
+        else
+            local exit_code=$?
+            if [ $exit_code -eq 124 ]; then
+                echo "[Timeout] Attempt $attempt timed out after ${timeout_seconds}s" | tee -a "$log_file"
+                
+                # 检查是否是流式超时错误
+                if grep -q "Streaming request timeout" "$log_file"; then
+                    echo "[Timeout] Streaming timeout detected" | tee -a "$log_file"
+                    
+                    if [ $attempt -lt $max_retries ]; then
+                        # 增加下次重试的超时时间
+                        timeout_seconds=$((timeout_seconds + 60))
+                        echo "[Retry] Will retry with ${timeout_seconds}s timeout after 5s delay..." | tee -a "$log_file"
+                        sleep 5
+                    fi
+                else
+                    # 其他超时错误，不重试
+                    echo "[Error] Non-streaming timeout, not retrying" | tee -a "$log_file"
+                    return $exit_code
+                fi
+            else
+                echo "[Error] Attempt $attempt failed with exit code $exit_code" | tee -a "$log_file"
+                # 其他错误，根据错误类型决定是否重试
+                if grep -q "Streaming request timeout" "$log_file"; then
+                    echo "[Timeout] Streaming timeout detected, will retry" | tee -a "$log_file"
+                    if [ $attempt -lt $max_retries ]; then
+                        timeout_seconds=$((timeout_seconds + 60))
+                        sleep 5
+                    fi
+                else
+                    # 非超时错误，不重试
+                    return $exit_code
+                fi
+            fi
+        fi
+        
+        attempt=$((attempt + 1))
+    done
+    
+    if [ "$success" = "false" ]; then
+        echo "[Failed] All $max_retries attempts failed" | tee -a "$log_file"
+        return 1
+    fi
+    
+    return 0
+}
+
+
 
 # ---------- 主循环 ----------
 
