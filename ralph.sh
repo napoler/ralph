@@ -362,7 +362,13 @@ load_config() {
     local env_proxy="$RALPH_PROXY"
     
     # 如果变量值不同于默认值，说明是CLI传入的
+    # CLI 参数检查（只有 CLI 显式传入时才标记为 provided）
     [ "$TOOL" != "qwen" ] && cli_tool_provided=true
+    [ "$MAX_ITERATIONS" != "10" ] && cli_max_provided=true
+    [ -n "$PROJECT_DIR" ] && cli_project_provided=true
+    [ -n "$LOG_DIR" ] && cli_log_provided=true
+    # WORKTREE_ROOT 由配置文件控制，不检查 CLI provided
+    [ "$BASE_BRANCH" != "dev" ] && cli_base_provided=true
     [ "$MAX_ITERATIONS" != "10" ] && cli_max_provided=true
     [ -n "$PROJECT_DIR" ] && cli_project_provided=true
     [ -n "$LOG_DIR" ] && cli_log_provided=true
