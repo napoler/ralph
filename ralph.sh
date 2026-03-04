@@ -53,7 +53,12 @@ TOOL="qwen"
 MAX_ITERATIONS=10
 PROJECT_DIR=""
 LOG_DIR=""
-WORKTREE_ROOT="$PWD/.ralph/tmp"
+# Default: use /mnt/data/dev/tmp if exists, otherwise fallback to project-local .ralph/tmp
+if [ -d "/mnt/data/dev/tmp" ]; then
+    WORKTREE_ROOT="/mnt/data/dev/tmp"
+else
+    WORKTREE_ROOT="$PWD/.ralph/tmp"
+fi
 BASE_BRANCH="dev"
 LOAD_BALANCE="true"
 COMPLETE_SIGNAL="<promise>COMPLETE</promise>"
