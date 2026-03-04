@@ -132,9 +132,12 @@ execution:
   log_level: info
 
 ralph_paths:
-  - ~/.openclaw/workspace/ralph-fork/ralph.sh
-  - ~/decentralized-box/ralph.sh
-  - /mnt/data/dev/decentralized-box/ralph.sh
+  # 不再硬编码具体路径，使用智能检测机制
+  # 优先级顺序:
+  # 1. 环境变量 RALPH_PATH
+  # 2. 从脚本位置推断 (skills/ralph-orchestration/../../ralph.sh)
+  # 3. PATH 中的 ralph.sh 命令
+  # 4. 常见位置搜索 ($PWD, $HOME/.local/bin, /usr/local/bin 等)
 ```
 
 ### keywords.conf
@@ -188,12 +191,12 @@ ralph -y 部署应用到服务器
 添加到 `~/.bashrc` 或 `~/.zshrc`:
 
 ```bash
-# 方式 1: 直接调用
-alias ralph='bash ~/.config/opencode/skills/ralph-orchestration/ralph-orchestration.sh'
+# 方式 1: 使用 install-skill.sh 安装后自动配置
+# 安装脚本会创建符号链接到 ~/.local/bin/ralph
 
-# 方式 2: 使用符号链接 (如果 install-skill.sh 已创建)
-# 确保 ~/.local/bin 在 PATH 中
-alias ralph='ralph'
+# 方式 2: 手动添加别名（路径会根据安装位置自动调整）
+# 建议使用 install-skill.sh 安装，不要手动配置
+alias ralph='ralph'  # 安装后直接使用
 ```
 
 然后:
