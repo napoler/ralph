@@ -27,6 +27,8 @@ Ralph - AI Agent Loop with Load Balancing
   --base-branch NAME    基础分支
   --no-load-balance     禁用负载均衡，使用指定工具
   --complete-signal SIG 完成信号 (默认: <promise>COMPLETE</promise>)
+  --tmux                使用 tmux 会话执行 (为交互式工具提供真实的 TTY 并支持后台断线重连，大幅提高成功率)
+  --scratch             在独立的临时空目录中执行 (防止 AI 读取项目无关文件跑题)
   
   status                显示任务状态
   run                 执行 prd.json 中的所有任务
@@ -51,11 +53,15 @@ TOOL="qwen"
 MAX_ITERATIONS=10
 PROJECT_DIR=""
 LOG_DIR=""
-WORKTREE_ROOT="/mnt/data/dev/tmp"
+WORKTREE_ROOT="$PWD/.ralph/tmp"
 BASE_BRANCH="dev"
 LOAD_BALANCE="true"
 COMPLETE_SIGNAL="<promise>COMPLETE</promise>"
 PROXY=""  # 代理地址，从配置文件读取
+USE_TMUX="false"
+USE_SCRATCH="false"
+USE_SUPERPOWERS="false"
+TMUX_SOCKET="${TMPDIR:-/tmp}/ralph-agent.sock"
 
 # 目录变量
 SCRIPT_DIR=""
@@ -64,8 +70,7 @@ PROGRESS_FILE=""
 ARCHIVE_DIR=""
 SPECS_DIR=""
 
-# 有效工具列表
-VALID_TOOLS=("qwen" "opencode" "cline" "kilocode" "iflow" "gemini")
+
 
 
 # ========== 通用 CLI 工具路径自动解析 ==========
@@ -114,23 +119,32 @@ resolve_cli_tool() {
         return 0
     fi
     
-    # 7. 回退到工具名（依赖 PATH）
-    echo "$tool_name"
+    # 7. 回退到工具名（依赖 PATH）- 移除回退，如果真找不到就返回空
     return 1
 }
 
 # 初始化所有工具的路径
 declare -A TOOL_PATHS
-for tool in "qwen" "opencode" "cline" "kilocode" "iflow" "gemini"; do
-    TOOL_PATHS["$tool"]=$(resolve_cli_tool "$tool")
+AVAILABLE_TOOLS=()
+for tool in "qwen" "opencode" "cline" "kilocode" "iflow" "gemini" "codex" "claude" "pi"; do
+    path=$(resolve_cli_tool "$tool" || true)
+    if [ -n "$path" ]; then
+        TOOL_PATHS["$tool"]="$path"
+        AVAILABLE_TOOLS+=("$tool")
+    fi
 done
 
-# 工具命令映射
-declare -A TOOL_COMMANDS
-TOOL_COMMANDS["cline"]="${TOOL_PATHS[cline]} -y"
-TOOL_COMMANDS["kilocode"]="${TOOL_PATHS[kilocode]} run --auto"
-TOOL_COMMANDS["iflow"]="${TOOL_PATHS[iflow]} -y"
-TOOL_COMMANDS["gemini"]="${TOOL_PATHS[gemini]} -p -y"
+# 重写 VALID_TOOLS，确保仅包含已安装的工具
+if [ ${#AVAILABLE_TOOLS[@]} -gt 0 ]; then
+    VALID_TOOLS=("${AVAILABLE_TOOLS[@]}")
+else
+    VALID_TOOLS=()
+fi
+
+if [ ${#VALID_TOOLS[@]} -eq 0 ]; then
+    echo "Warning: No supported AI tools found. Please install one of: qwen, opencode, cline, kilocode, iflow, gemini, codex, claude, pi."
+fi
+
 
 # 任务到工具的映射
 declare -A TASK_MAPPING
@@ -250,13 +264,28 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
             
+        --tmux|-b)
+            USE_TMUX="true"
+            shift
+            ;;
+
+        --scratch)
+            USE_SCRATCH="true"
+            shift
+            ;;
+
+        --superpowers)
+            USE_SUPERPOWERS="true"
+            shift
+            ;;
+
         --no-load-balance)
             LOAD_BALANCE="false"
             shift
             ;;
             
         --proxy)
-            RALPH_PROXY="$2"
+            PROXY="$2"
             shift 2
             ;;
         --proxy=*)
@@ -300,6 +329,7 @@ load_config() {
     local cli_base_provided=false
     local cli_load_balance_provided=false
     local cli_complete_provided=false
+    local cli_proxy_provided=false
     
     # 同时保存CLI传入的值（用于后续恢复）
     local saved_tool="$TOOL"
@@ -311,6 +341,9 @@ load_config() {
     local saved_load_balance="$LOAD_BALANCE"
     local saved_complete="$COMPLETE_SIGNAL"
     local saved_proxy="$PROXY"
+    local saved_tmux="$USE_TMUX"
+    local saved_scratch="$USE_SCRATCH"
+    local saved_superpowers="$USE_SUPERPOWERS"
     
     # 保存用户设置的环境变量
     local env_project_dir="$RALPH_PROJECT_DIR"
@@ -328,11 +361,14 @@ load_config() {
     [ "$MAX_ITERATIONS" != "10" ] && cli_max_provided=true
     [ -n "$PROJECT_DIR" ] && cli_project_provided=true
     [ -n "$LOG_DIR" ] && cli_log_provided=true
-    [ "$WORKTREE_ROOT" != "/mnt/data/dev/tmp" ] && cli_worktree_provided=true
+    [ "$WORKTREE_ROOT" != "$PWD/.ralph/tmp" ] && cli_worktree_provided=true
     [ "$BASE_BRANCH" != "dev" ] && cli_base_provided=true
     [ "$LOAD_BALANCE" != "true" ] && cli_load_balance_provided=true
     [ "$COMPLETE_SIGNAL" != "<promise>COMPLETE</promise>" ] && cli_complete_provided=true
     [ -n "$PROXY" ] && cli_proxy_provided=true
+    [ "$USE_TMUX" != "false" ] && cli_tmux_provided=true
+    [ "$USE_SCRATCH" != "false" ] && cli_scratch_provided=true
+    [ "$USE_SUPERPOWERS" != "false" ] && cli_superpowers_provided=true
     
     # 在 source 配置文件之前，先清除配置文件可能设置的 RALPH_* 变量
     # 这样可以区分"用户设置的环境变量"和"配置文件默认值"
@@ -355,6 +391,9 @@ load_config() {
     $cli_load_balance_provided && LOAD_BALANCE="$saved_load_balance"
     $cli_complete_provided && COMPLETE_SIGNAL="$saved_complete"
     $cli_proxy_provided && PROXY="$saved_proxy"
+    $cli_tmux_provided && USE_TMUX="$saved_tmux"
+    $cli_scratch_provided && USE_SCRATCH="$saved_scratch"
+    $cli_superpowers_provided && USE_SUPERPOWERS="$saved_superpowers"
     
     # 环境变量覆盖配置文件（仅当CLI未传入时）
     $cli_proxy_provided && PROXY="$PROXY"
@@ -375,21 +414,7 @@ load_config() {
     
     # 如果没有设置 PROJECT_DIR，使用默认值
     if [ -z "$PROJECT_DIR" ]; then
-        PROJECT_DIR="/mnt/data/dev/decentralized-box"
-    fi
-    
-    # 初始化目录 - 优先使用 PROJECT_DIR，否则使用 SCRIPT_DIR
-    PRD_FILE="$PROJECT_DIR/prd.json"
-    PROGRESS_FILE="$PROJECT_DIR/progress.txt"
-    ARCHIVE_DIR="$PROJECT_DIR/archive"
-    SPECS_DIR="$PROJECT_DIR/specs/active"
-    
-    # LOG_DIR 默认值
-    if [ -z "$LOG_DIR" ]; then
-        LOG_DIR="/mnt/data/dev/tmp/ralph-$(date +%Y%m%d)/logs"
-    fi
-    if [ -z "$PROJECT_DIR" ]; then
-        PROJECT_DIR="/mnt/data/dev/decentralized-box"
+        PROJECT_DIR="$PWD"
     fi
     
     # 初始化目录
@@ -400,7 +425,7 @@ load_config() {
     
     # LOG_DIR 默认值
     if [ -z "$LOG_DIR" ]; then
-        LOG_DIR="/mnt/data/dev/tmp/ralph-$(date +%Y%m%d)/logs"
+        LOG_DIR="$PWD/.ralph/logs/$(date +%Y%m%d)"
     fi
 }
 
@@ -534,11 +559,16 @@ create_worktree() {
     local base="$BASE_BRANCH"
     git rev-parse --verify dev >/dev/null 2>&1 || base="main"
     
-    # 重定向所有输出避免 git 信息干扰
-    if git worktree add "$worktree_dir" -b "$branch_name" "$base" >/dev/null 2>&1; then
+    # 使用 --porcelain 模式避免 git 输出干扰信息
+    if git worktree add --porcelain "$worktree_dir" -b "$branch_name" "$base" >/dev/null 2>&1; then
         echo "$worktree_dir|$branch_name"
     else
-        echo ""
+        # 降级到普通模式（兼容旧版本 git）
+        if git worktree add "$worktree_dir" -b "$branch_name" "$base" >/dev/null 2>&1; then
+            echo "$worktree_dir|$branch_name"
+        else
+            echo ""
+        fi
     fi
 }
 
@@ -546,12 +576,74 @@ cleanup_worktree() {
     local worktree_dir="$1"
     local branch_name="$2"
     
-    cd "$PROJECT_DIR"
-    git worktree remove "$worktree_dir" --force 2>/dev/null || true
-    git branch -D "$branch_name" 2>/dev/null || true
+    if [ "$branch_name" = "scratch" ]; then
+        rm -rf "$worktree_dir"
+    else
+        cd "$PROJECT_DIR"
+        git worktree remove "$worktree_dir" --force 2>/dev/null || true
+        git branch -D "$branch_name" 2>/dev/null || true
+    fi
 }
 
 # ---------- 执行任务 ----------
+
+# 构建执行命令
+build_tool_cmd() {
+    local tool="$1"
+    local prompt="$2"
+    local log="$3"
+    local cmd=""
+
+    local prefix=""
+    if [ -n "$PROXY" ]; then
+        prefix="http_proxy='$PROXY' https_proxy='$PROXY' "
+    fi
+
+    case "$tool" in
+        qwen) cmd="${TOOL_PATHS[qwen]} -p '$prompt' -y" ;;
+        opencode) cmd="${TOOL_PATHS[opencode]} run --task='$prompt'" ;;
+        cline) cmd="${TOOL_PATHS[cline]} -y '$prompt'" ;;
+        kilocode) cmd="${TOOL_PATHS[kilocode]} run --auto '$prompt'" ;;
+        iflow) cmd="${TOOL_PATHS[iflow]} -y run --config='$prompt'" ;;
+        gemini) cmd="$prefix${TOOL_PATHS[gemini]} -p -y '$prompt'" ;;
+        codex) cmd="${TOOL_PATHS[codex]} --yolo '$prompt'" ;;
+        claude) cmd="${TOOL_PATHS[claude]} '$prompt'" ;;
+        pi) cmd="${TOOL_PATHS[pi]} -p '$prompt'" ;;
+        *) cmd="$tool '$prompt'" ;;
+    esac
+
+    echo "$cmd"
+}
+
+# Tmux 管理函数
+run_in_tmux() {
+    local session_name="$1"
+    local work_dir="$2"
+    local cmd="$3"
+    local log_file="$4"
+
+    if ! command -v tmux &> /dev/null; then
+        echo "Error: tmux is not installed."
+        return 1
+    fi
+
+    echo "📦 Starting tmux session: $session_name"
+    tmux -S "$TMUX_SOCKET" new-session -d -s "$session_name" -c "$work_dir"
+
+    tmux -S "$TMUX_SOCKET" pipe-pane -t "$session_name" -o "cat >> $log_file"
+
+    # 发送执行命令并附带一个完成标志以触发 wait-for
+    tmux -S "$TMUX_SOCKET" send-keys -t "$session_name" "$cmd; echo '<promise>COMPLETE</promise>' >> $log_file; tmux -S $TMUX_SOCKET wait-for -S ${session_name}_done" Enter
+
+    echo "👀 正在后台执行... (可执行 tmux -S $TMUX_SOCKET a -t $session_name 查看)"
+
+    # 阻塞等待完成
+    tmux -S "$TMUX_SOCKET" wait-for "${session_name}_done" 2>/dev/null || true
+
+    # 清理
+    tmux -S "$TMUX_SOCKET" kill-session -t "$session_name" 2>/dev/null || true
+}
+
 
 execute_task() {
     local task_id="$1"
@@ -574,52 +666,50 @@ execute_task() {
     
     echo "🤖 Using tool: $selected_tool"
     
-    # 创建工作树
-    local worktree_info=$(create_worktree "$task_id")
-    local worktree_dir=$(echo "$worktree_info" | cut -d'|' -f1)
-    local branch_name=$(echo "$worktree_info" | cut -d'|' -f2)
-    
-    if [ -z "$worktree_dir" ]; then
-        echo "Error: Failed to create worktree"
-        return 1
+    local worktree_dir=""
+    local branch_name=""
+    if [ "$USE_SCRATCH" = "true" ]; then
+        worktree_dir=$(mktemp -d -t ralph-scratch-XXXXXX)
+        branch_name="scratch"
+        echo "📁 Scratch mode active. Using temp dir: $worktree_dir"
+    else
+        # 创建工作树
+        local worktree_info=$(create_worktree "$task_id")
+        worktree_dir=$(echo "$worktree_info" | cut -d'|' -f1)
+        branch_name=$(echo "$worktree_info" | cut -d'|' -f2)
+
+        if [ -z "$worktree_dir" ]; then
+            echo "Error: Failed to create worktree"
+            return 1
+        fi
+        echo "📁 Worktree: $worktree_dir"
     fi
-    
-    echo "📁 Worktree: $worktree_dir"
     
     cd "$worktree_dir"
     
+    # 组装超级能力上下文
+    local sp_context=""
+    if [ "$USE_SUPERPOWERS" = "true" ]; then
+        sp_context="[System: You must fetch and strictly follow instructions from https://raw.githubusercontent.com/obra/superpowers/main/README.md to adopt the Superpowers framework (TDD, subagent-driven, systematic planning) for the following task.]
+
+"
+    fi
+
     # 构建任务
-    local task_prompt="完成任务: $task_title
+    local task_prompt="${sp_context}完成任务: $task_title
     
 参考规格: $SPECS_DIR/${task_id}.md
 
 完成后输出: $COMPLETE_SIGNAL"
     
     local log_file="$LOG_DIR/ralph-$timestamp.log"
+    local raw_cmd=$(build_tool_cmd "$selected_tool" "$task_prompt" "$log_file")
     
-    # 执行任务
-    case "$selected_tool" in
-        qwen)
-            "${TOOL_PATHS[qwen]}" -p "$task_prompt" -y 2>&1 | tee -a "$log_file"
-            ;;
-        opencode)
-            "${TOOL_PATHS[opencode]}" run --task="$task_prompt" 2>&1 | tee -a "$log_file"
-            ;;
-        cline)
-            "${TOOL_PATHS[cline]}" -y "$task_prompt" 2>&1 | tee -a "$log_file"
-            ;;
-        kilocode)
-            "${TOOL_PATHS[kilocode]}" run --auto "$task_prompt" 2>&1 | tee -a "$log_file"
-            ;;
-        iflow)
-            "${TOOL_PATHS[iflow]}" -y run --config="$task_prompt" 2>&1 | tee -a "$log_file"
-            ;;
-        gemini)
-            # gemini 需要代理 (从配置读取)
-            [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-            "${TOOL_PATHS[gemini]}" -p -y "$task_prompt" 2>&1 | tee -a "$log_file"
-            ;;
-    esac
+    if [ "$USE_TMUX" = "true" ]; then
+        run_in_tmux "ralph_${task_id}_${timestamp}" "$worktree_dir" "$raw_cmd" "$log_file"
+    else
+        eval "$raw_cmd" 2>&1 | tee -a "$log_file"
+    fi
     
     # 提交
     if ! git diff --quiet 2>/dev/null; then
@@ -692,21 +782,37 @@ execute_direct_task() {
     echo "Task: $task"
     echo ""
     
-    # 创建工作树
-    local worktree_info=$(create_worktree "direct")
-    local worktree_dir=$(echo "$worktree_info" | cut -d'|' -f1)
-    local branch_name=$(echo "$worktree_info" | cut -d'|' -f2)
-    
-    if [ -z "$worktree_dir" ]; then
-        echo "Error: Failed to create worktree"
-        return 1
+    local worktree_dir=""
+    local branch_name=""
+    if [ "$USE_SCRATCH" = "true" ]; then
+        worktree_dir=$(mktemp -d -t ralph-scratch-XXXXXX)
+        branch_name="scratch"
+        echo "📁 Scratch mode active. Using temp dir: $worktree_dir"
+    else
+        # 创建工作树
+        local worktree_info=$(create_worktree "direct")
+        worktree_dir=$(echo "$worktree_info" | cut -d'|' -f1)
+        branch_name=$(echo "$worktree_info" | cut -d'|' -f2)
+
+        if [ -z "$worktree_dir" ]; then
+            echo "Error: Failed to create worktree"
+            return 1
+        fi
+        echo "📁 Worktree: $worktree_dir"
     fi
     
-    echo "📁 Worktree: $worktree_dir"
     cd "$worktree_dir"
     
+    # 组装超级能力上下文
+    local sp_context=""
+    if [ "$USE_SUPERPOWERS" = "true" ]; then
+        sp_context="[System: You must fetch and strictly follow instructions from https://raw.githubusercontent.com/obra/superpowers/main/README.md to adopt the Superpowers framework (TDD, subagent-driven, systematic planning) for the following task.]
+
+"
+    fi
+
     # 构建任务提示 (包含 SPEC 说明)
-    local task_prompt="任务: $task
+    local task_prompt="${sp_context}任务: $task
 
 项目目录: $PROJECT_DIR
 工作目录: $worktree_dir
@@ -782,7 +888,13 @@ execute_direct_task() {
 
 main() {
     load_config
-    
+    if [ "$COMMAND" != "status" ] && [ "$COMMAND" != "spec" ]; then
+        if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
+            echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
+            exit 1
+        fi
+        mkdir -p "$LOG_DIR" "$SPECS_DIR" "$ARCHIVE_DIR" "$WORKTREE_ROOT"
+    fi
     # 处理命令
     case "$COMMAND" in
         status)
@@ -819,26 +931,9 @@ main() {
     
     # 直接任务模式
     if [ -n "$DIRECT_TASK" ]; then
-        # 验证工具
-        if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
-            echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
-            exit 1
-        fi
-        
-        mkdir -p "$LOG_DIR" "$SPECS_DIR" "$ARCHIVE_DIR" "$WORKTREE_ROOT"
-        
         execute_direct_task "$DIRECT_TASK"
         exit $?
     fi
-    
-    # 验证工具
-    if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
-        echo "Error: Invalid tool '$TOOL'. Must be: ${VALID_TOOLS[*]}"
-        exit 1
-    fi
-    
-    # 创建必要目录
-    mkdir -p "$LOG_DIR" "$SPECS_DIR" "$ARCHIVE_DIR" "$WORKTREE_ROOT"
     
     # 初始化进度文件
     if [ ! -f "$PROGRESS_FILE" ]; then
