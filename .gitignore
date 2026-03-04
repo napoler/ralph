@@ -3,6 +3,9 @@ prd.json
 progress.txt
 .last-branch
 
+# Ralph temp files
+.ralph/tmp/
+
 # Archive is optional to commit
 # archive/
 
