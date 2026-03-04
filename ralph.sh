@@ -618,7 +618,7 @@ build_tool_cmd() {
         qwen) cmd="${TOOL_PATHS[qwen]} -p '$prompt' -y" ;;
         opencode) cmd="${TOOL_PATHS[opencode]} run '$prompt'" ;;
         cline) cmd="${TOOL_PATHS[cline]} -y '$prompt'" ;;
-        kilocode) cmd="${TOOL_PATHS[kilocode]} --prompt='$prompt' --auto" ;;
+        kilocode) cmd="${TOOL_PATHS[kilocode]} run '$prompt'" ;;
         iflow) cmd="${TOOL_PATHS[iflow]} -p '$prompt' -y" ;;
         gemini) cmd="$prefix${TOOL_PATHS[gemini]} -p -y '$prompt'" ;;
         codex) cmd="${TOOL_PATHS[codex]} --yolo '$prompt'" ;;
@@ -949,7 +949,7 @@ execute_direct_task() {
                 tool_cmd="${TOOL_PATHS[cline]} -y \"$task_prompt\""
                 ;;
             kilocode)
-                tool_cmd="${TOOL_PATHS[kilocode]} --prompt=\"$task_prompt\" --auto"
+                tool_cmd="${TOOL_PATHS[kilocode]} run \"$task_prompt\""
                 ;;
             iflow)
                 tool_cmd="${TOOL_PATHS[iflow]} -p \"$task_prompt\" -y"
