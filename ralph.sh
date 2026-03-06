@@ -54,10 +54,10 @@ MAX_ITERATIONS=10
 PROJECT_DIR=""
 LOG_DIR=""
 # Default: use /mnt/data/dev/tmp if exists, otherwise fallback to project-local .ralph/tmp
-if [ -d "/mnt/data/dev/tmp" ]; then
-    WORKTREE_ROOT="/mnt/data/dev/tmp"
+if [ -n "$TMPDIR" ]; then
+    WORKTREE_ROOT="$TMPDIR/ralph-worktrees"
 else
-    WORKTREE_ROOT="$PWD/.ralph/tmp"
+    WORKTREE_ROOT="/tmp/ralph-worktrees"
 fi
 BASE_BRANCH="dev"
 LOAD_BALANCE="true"
@@ -180,6 +180,10 @@ while [[ $# -gt 0 ]]; do
         # 主命令
         status|show)
             COMMAND="status"
+            shift
+            ;;
+        auto|autodrive)
+            COMMAND="auto"
             shift
             ;;
         run)
@@ -656,6 +660,16 @@ run_in_tmux() {
 }
 
 
+smart_analyze_complexity() {
+    local title="$1"
+    local len=${#title}
+    if [[ "$title" =~ 实现|系统|重构|开发|修复|架构|测试 ]] || [ $len -gt 15 ]; then
+        echo "complex"
+    else
+        echo "simple"
+    fi
+}
+
 execute_task() {
     local task_id="$1"
     local task_title="$2"
@@ -697,6 +711,14 @@ execute_task() {
     fi
     
     cd "$worktree_dir"
+
+    # Smart Complexity Analysis
+    local complexity=$(smart_analyze_complexity "$task_title")
+    if [ "$complexity" = "complex" ]; then
+        USE_SUPERPOWERS="true"
+        MAX_ITERATIONS=$((MAX_ITERATIONS * 2))
+        echo "🧠 Task detected as complex. Auto-enabled superpowers and increased iterations to $MAX_ITERATIONS."
+    fi
     
     # 组装超级能力上下文
     local sp_context=""
@@ -781,6 +803,67 @@ EOF
 }
 
 # ---------- 直接任务执行 ----------
+execute_autodrive() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🚀 Fully Autonomous Driving Mode (Auto-Drive) | Tool: $TOOL"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    local worktree_dir=""
+    local branch_name=""
+    if [ "$USE_SCRATCH" = "true" ]; then
+        worktree_dir=$(mktemp -d -t ralph-scratch-XXXXXX)
+        branch_name="scratch"
+    else
+        local worktree_info=$(create_worktree "autodrive")
+        worktree_dir=$(echo "$worktree_info" | cut -d"|" -f1)
+        branch_name=$(echo "$worktree_info" | cut -d"|" -f2)
+        if [ -z "$worktree_dir" ]; then
+            echo "Error: Failed to create worktree"
+            return 1
+        fi
+    fi
+
+    cd "$worktree_dir"
+
+    local task_prompt="[System: You are an autonomous AI software engineer. Analyze the project in $PROJECT_DIR. Find the next missing feature, bug, or improvement. Create a plan and implement it. Provide a complete commit message summarizing your work. Output $COMPLETE_SIGNAL when done with the feature. If the project is fully complete and absolutely nothing else needs to be done, output <promise>PROJECT_FINISHED</promise>.]"
+
+    local iter=1
+    while true; do
+        local timestamp=$(date +%Y%m%d-%H%M%S)
+        local log_file="$LOG_DIR/ralph-autodrive-$timestamp.log"
+        echo "--- Auto-Drive Iteration $iter ---"
+        local raw_cmd=$(build_tool_cmd "$TOOL" "$task_prompt" "$log_file")
+        if [ "$USE_TMUX" = "true" ]; then
+            run_in_tmux "ralph_auto_${timestamp}" "$worktree_dir" "$raw_cmd" "$log_file"
+        else
+            eval "$raw_cmd" 2>&1 | tee -a "$log_file"
+        fi
+
+        if grep -q "<promise>PROJECT_FINISHED</promise>" "$log_file" 2>/dev/null; then
+            echo "🎉 Auto-Drive complete: AI reported project is finished!"
+            break
+        fi
+
+        if ! git diff --quiet 2>/dev/null; then
+            git add -A
+            git commit -m "feat: auto-drive iteration $iter" 2>/dev/null || true
+            git push -u origin "$branch_name" 2>/dev/null || true
+        fi
+
+        if [ $iter -ge 50 ]; then
+            echo "⚠️ Auto-Drive reached maximum safety limit of 50 iterations."
+            break
+        fi
+        iter=$((iter + 1))
+        sleep 2
+    done
+
+    cleanup_worktree "$worktree_dir" "$branch_name"
+    return 0
+}
+
 execute_direct_task() {
     local task="$1"
     local iteration=1
@@ -813,6 +896,14 @@ execute_direct_task() {
     fi
     
     cd "$worktree_dir"
+
+    # Smart Complexity Analysis
+    local complexity=$(smart_analyze_complexity "$task")
+    if [ "$complexity" = "complex" ]; then
+        USE_SUPERPOWERS="true"
+        MAX_ITERATIONS=$((MAX_ITERATIONS * 2))
+        echo "🧠 Task detected as complex. Auto-enabled superpowers and increased iterations to $MAX_ITERATIONS."
+    fi
     
     # 组装超级能力上下文
     local sp_context=""
@@ -897,7 +988,23 @@ execute_direct_task() {
 
 # ---------- 主循环 ----------
 
+check_dependencies() {
+    local missing=0
+    if ! command -v jq &> /dev/null; then
+        echo "Error: jq is required but not installed. Please install jq."
+        missing=1
+    fi
+    if ! command -v git &> /dev/null; then
+        echo "Error: git is required but not installed. Please install git."
+        missing=1
+    fi
+    if [ $missing -eq 1 ]; then
+        exit 1
+    fi
+}
+
 main() {
+    check_dependencies
     load_config
     if [ "$COMMAND" != "status" ] && [ "$COMMAND" != "spec" ]; then
         if [[ ! " ${VALID_TOOLS[@]} " =~ " ${TOOL} " ]]; then
@@ -910,6 +1017,10 @@ main() {
     case "$COMMAND" in
         status)
             show_status
+            exit 0
+            ;;
+        auto)
+            execute_autodrive
             exit 0
             ;;
         run)
