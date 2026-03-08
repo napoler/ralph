@@ -65,6 +65,9 @@ vim prd.json  # 编辑任务
 | `--task` | `-t` | 直接任务描述 | - |
 | `--project` | `-p` | 项目目录 | 配置值 |
 | `--proxy` | | 代理地址 | 配置值 |
+| `--model` | | 模型名称 (用于 opencode) | - |
+
+### Superpowers 参数
 
 ### Superpowers 参数
 
@@ -113,6 +116,13 @@ RALPH_TOOL="qwen"
 RALPH_MAX_ITERATIONS="10"
 
 # 启用负载均衡
+RALPH_LOAD_BALANCE="true"
+
+# 模型选择 (用于 opencode 等工具)
+# 示例：RALPH_MODEL="qwen3.5"
+RALPH_MODEL=""
+
+# 日志目录
 RALPH_LOAD_BALANCE="true"
 
 # 日志目录

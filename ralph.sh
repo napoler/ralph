@@ -29,6 +29,11 @@ Ralph - AI Agent Loop with Load Balancing
   --complete-signal SIG 完成信号 (默认: <promise>COMPLETE</promise>)
   --tmux                使用 tmux 会话执行 (为交互式工具提供真实的 TTY 并支持后台断线重连，大幅提高成功率)
   --scratch             在独立的临时空目录中执行 (防止 AI 读取项目无关文件跑题)
+  --no-load-balance     禁用负载均衡，使用指定工具
+  --complete-signal SIG 完成信号 (默认：<promise>COMPLETE</promise>)
+  --tmux                使用 tmux 会话执行 (为交互式工具提供真实的 TTY 并支持后台断线重连，大幅提高成功率)
+  --scratch             在独立的临时空目录中执行 (防止 AI 读取项目无关文件跑题)
+  --model NAME          模型名称 (用于 opencode 等工具，如：qwen3.5)
   
   status                显示任务状态
   run                 执行 prd.json 中的所有任务
@@ -49,7 +54,10 @@ EOF
 fi
 
 # ---------- 默认值 (可被配置/环境变量/命令行覆盖) ----------
+# 默认值和模型配置
 TOOL="qwen"
+MODEL=""  # 模型选择，用于 opencode 等工具
+MAX_ITERATIONS=10
 MAX_ITERATIONS=10
 PROJECT_DIR=""
 LOG_DIR=""
@@ -67,6 +75,7 @@ USE_TMUX="false"
 USE_SCRATCH="false"
 USE_SUPERPOWERS="false"
 TMUX_SOCKET="${TMPDIR:-/tmp}/ralph-agent.sock"
+MODEL=""  # 模型选择
 
 # 目录变量
 SCRIPT_DIR=""
@@ -302,6 +311,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
             
+        --model)
+            MODEL="$2"
+            shift 2
+            ;;
+        --model=*)
+            MODEL="${1#*=}"
+            shift
+            ;;
+            
         --config)
             CONFIG_FILE="$2"
             shift 2
@@ -353,6 +371,8 @@ load_config() {
     local saved_tmux="$USE_TMUX"
     local saved_scratch="$USE_SCRATCH"
     local saved_superpowers="$USE_SUPERPOWERS"
+    local saved_model="$MODEL"
+    local saved_superpowers="$USE_SUPERPOWERS"
     
     # 保存用户设置的环境变量
     local env_project_dir="$RALPH_PROJECT_DIR"
@@ -361,6 +381,10 @@ load_config() {
     local env_log_dir="$RALPH_LOG_DIR"
     local env_worktree_root="$RALPH_WORKTREE_ROOT"
     local env_base_branch="$RALPH_BASE_BRANCH"
+    local env_load_balance="$RALPH_LOAD_BALANCE"
+    local env_complete_signal="$RALPH_COMPLETE_SIGNAL"
+    local env_proxy="$RALPH_PROXY"
+    local env_model="$RALPH_MODEL"
     local env_load_balance="$RALPH_LOAD_BALANCE"
     local env_complete_signal="$RALPH_COMPLETE_SIGNAL"
     local env_proxy="$RALPH_PROXY"
@@ -383,6 +407,8 @@ load_config() {
     [ -n "$PROXY" ] && cli_proxy_provided=true
     [ "$USE_TMUX" != "false" ] && cli_tmux_provided=true
     [ "$USE_SCRATCH" != "false" ] && cli_scratch_provided=true
+    [ "$USE_SUPERPOWERS" != "false" ] && cli_superpowers_provided=true
+    [ -n "$MODEL" ] && cli_model_provided=true
     [ "$USE_SUPERPOWERS" != "false" ] && cli_superpowers_provided=true
     
     # 在 source 配置文件之前，先清除配置文件可能设置的 RALPH_* 变量
@@ -409,6 +435,9 @@ load_config() {
     $cli_tmux_provided && USE_TMUX="$saved_tmux"
     $cli_scratch_provided && USE_SCRATCH="$saved_scratch"
     $cli_superpowers_provided && USE_SUPERPOWERS="$saved_superpowers"
+    $cli_model_provided && MODEL="$saved_model"
+    $cli_scratch_provided && USE_SCRATCH="$saved_scratch"
+    $cli_superpowers_provided && USE_SUPERPOWERS="$saved_superpowers"
     
     # 环境变量覆盖配置文件（仅当CLI未传入时）
     $cli_proxy_provided && PROXY="$PROXY"
@@ -422,6 +451,7 @@ load_config() {
     [ -n "$env_load_balance" ] && ! $cli_load_balance_provided && LOAD_BALANCE="$env_load_balance"
     [ -n "$env_complete_signal" ] && ! $cli_complete_provided && COMPLETE_SIGNAL="$env_complete_signal"
     [ -n "$env_proxy" ] && ! $cli_proxy_provided && PROXY="$env_proxy"
+    [ -n "$env_model" ] && ! $cli_model_provided && MODEL="$env_model"
     
     # 如果没有设置 PROJECT_DIR，使用默认值
     
@@ -474,18 +504,31 @@ get_tool_load() {
     pgrep -c -f "$tool" 2>/dev/null || echo 0
 }
 
-# 选择负载最低的工具
 select_lightest_tool() {
-    local min=999
     local chosen="$TOOL"
+    
+    # 获取所有负载最低的工具
+    local min=999
+    local lightest_tools=()
     
     for tool in "${VALID_TOOLS[@]}"; do
         local load=$(get_tool_load "$tool")
         if [[ $load -lt $min ]]; then
             min=$load
-            chosen=$tool
+            lightest_tools=("$tool")
+        elif [[ $load -eq $min ]]; then
+            lightest_tools+=("$tool")
         fi
     done
+    
+    # 如果只有一个最低负载工具，直接返回
+    if [[ ${#lightest_tools[@]} -eq 1 ]]; then
+        chosen="${lightest_tools[0]}"
+    else
+        # 随机选择负载最低的工具之一（均衡负载）
+        local random_idx=$((RANDOM % ${#lightest_tools[@]}))
+        chosen="${lightest_tools[$random_idx]}"
+    fi
     
     echo "$chosen"
 }
@@ -615,17 +658,25 @@ build_tool_cmd() {
     fi
 
     case "$tool" in
-        qwen) cmd="${TOOL_PATHS[qwen]} -p '$prompt' -y" ;;
-        opencode) cmd="${TOOL_PATHS[opencode]} run '$prompt'" ;;
-        cline) cmd="${TOOL_PATHS[cline]} -y '$prompt'" ;;
-        kilocode) cmd="${TOOL_PATHS[kilocode]} run '$prompt'" ;;
-        iflow) cmd="${TOOL_PATHS[iflow]} -p '$prompt' -y" ;;
-        gemini) cmd="$prefix${TOOL_PATHS[gemini]} -p -y '$prompt'" ;;
-        codex) cmd="${TOOL_PATHS[codex]} --yolo '$prompt'" ;;
-        claude) cmd="${TOOL_PATHS[claude]} '$prompt'" ;;
-        pi) cmd="${TOOL_PATHS[pi]} -p '$prompt'" ;;
-        *) cmd="$tool '$prompt'" ;;
+        qwen) cmd="${TOOL_PATHS[qwen]} -p $prompt -y" ;;
+        opencode)
+            if [ -n "$MODEL" ]; then
+                cmd="${TOOL_PATHS[opencode]} run --model '$MODEL' '$prompt'"
+            else
+                cmd="${TOOL_PATHS[opencode]} run '$prompt'"
+            fi
+            ;;
+        cline) cmd="${TOOL_PATHS[cline]} -y $prompt" ;;
+        kilocode) cmd="${TOOL_PATHS[kilocode]} run $prompt" ;;
+        iflow) cmd="${TOOL_PATHS[iflow]} -p $prompt -y" ;;
+        gemini) cmd="$prefix${TOOL_PATHS[gemini]} -p -y $prompt" ;;
+        codex) cmd="${TOOL_PATHS[codex]} --yolo $prompt" ;;
+        claude) cmd="${TOOL_PATHS[claude]} $prompt" ;;
+        pi) cmd="${TOOL_PATHS[pi]} -p $prompt" ;;
+        *) cmd="$tool $prompt" ;;
     esac
+
+    echo "$cmd"
 
     echo "$cmd"
 }
@@ -741,10 +792,9 @@ execute_task() {
     if [ "$USE_TMUX" = "true" ]; then
         run_in_tmux "ralph_${task_id}_${timestamp}" "$worktree_dir" "$raw_cmd" "$log_file"
     else
-        # 使用超时重试执行（默认 3 次重试，180 秒超时）
-        execute_with_retry "$raw_cmd" "$log_file" 3 180
+        # 使用工具失败自动切换重试
+        execute_with_tool_fallback "$selected_tool" "$task_prompt" "$log_file"
     fi
-    
     # 提交
     if ! git diff --quiet 2>/dev/null; then
         git add -A
@@ -939,33 +989,29 @@ execute_direct_task() {
         
         local tool_cmd=""
         case "$TOOL" in
-            qwen)
-                tool_cmd="${TOOL_PATHS[qwen]} -p \"$task_prompt\" -y"
-                ;;
+            qwen) tool_cmd="${TOOL_PATHS[qwen]} -p $task_prompt -y" ;;
             opencode)
-                tool_cmd="${TOOL_PATHS[opencode]} run \"$task_prompt\""
+                if [ -n "$MODEL" ]; then
+                    tool_cmd="${TOOL_PATHS[opencode]} run --model '${MODEL}' '${task_prompt}'"
+                else
+                    tool_cmd="${TOOL_PATHS[opencode]} run '${task_prompt}'"
+                fi
                 ;;
-            cline)
-                tool_cmd="${TOOL_PATHS[cline]} -y \"$task_prompt\""
-                ;;
-            kilocode)
-                tool_cmd="${TOOL_PATHS[kilocode]} run \"$task_prompt\""
-                ;;
-            iflow)
-                tool_cmd="${TOOL_PATHS[iflow]} -p \"$task_prompt\" -y"
-                ;;
+            cline) tool_cmd="${TOOL_PATHS[cline]} -y $task_prompt" ;;
+            kilocode) tool_cmd="${TOOL_PATHS[kilocode]} run $task_prompt" ;;
+            iflow) tool_cmd="${TOOL_PATHS[iflow]} -p $task_prompt -y" ;;
             gemini)
                 [ -n "$PROXY" ] && export http_proxy="$PROXY" && export https_proxy="$PROXY"
-                tool_cmd="${TOOL_PATHS[gemini]} -p -y \"$task_prompt\""
+                tool_cmd="${TOOL_PATHS[gemini]} -p -y $task_prompt"
                 ;;
         esac
         
-        # 使用超时重试执行（默认 3 次重试，180 秒超时）
-        execute_with_retry "$tool_cmd" "$log_file" 3 180
+        # 使用工具失败自动切换重试
+        execute_with_tool_fallback "$TOOL" "$task_prompt" "$log_file" 3 180
+        local tool_result=$?
         
-        # 检查完成信号
-        if grep -q "$COMPLETE_SIGNAL" "$log_file" 2>/dev/null; then
-            echo ""
+        if grep -q "$COMPLETE_SIGNAL" "$log_file" 2>/dev/null || [ $tool_result -eq 0 ];
+        then
             echo "🎉 Task completed!"
             
             # 提交
@@ -999,7 +1045,7 @@ execute_with_retry() {
     local tool_cmd="$1"
     local log_file="$2"
     local max_retries="${3:-3}"
-    local timeout_seconds="${4:-180}"  # 默认 180 秒超时
+    local timeout_seconds="${4:-180}"
     
     local attempt=1
     local success=false
@@ -1007,43 +1053,40 @@ execute_with_retry() {
     while [ $attempt -le $max_retries ] && [ "$success" = "false" ]; do
         echo "[Attempt $attempt/$max_retries] Executing with ${timeout_seconds}s timeout..." | tee -a "$log_file"
         
-        # 使用 timeout 命令包装执行
-        if timeout "$timeout_seconds" bash -c "$tool_cmd" 2>&1 | tee -a "$log_file"; then
+        # 使用 eval 执行命令，timeout 控制总时间
+        (
+            eval "$tool_cmd"
+        ) 2>&1 | timeout "$timeout_seconds" tee -a "$log_file"
+        local exit_code=${PIPESTATUS[0]}
+        
+        if [ $exit_code -eq 0 ]; then
             success=true
             echo "[Success] Completed on attempt $attempt" | tee -a "$log_file"
-        else
-            local exit_code=$?
-            if [ $exit_code -eq 124 ]; then
-                echo "[Timeout] Attempt $attempt timed out after ${timeout_seconds}s" | tee -a "$log_file"
-                
-                # 检查是否是流式超时错误
-                if grep -q "Streaming request timeout" "$log_file"; then
-                    echo "[Timeout] Streaming timeout detected" | tee -a "$log_file"
-                    
-                    if [ $attempt -lt $max_retries ]; then
-                        # 增加下次重试的超时时间
-                        timeout_seconds=$((timeout_seconds + 60))
-                        echo "[Retry] Will retry with ${timeout_seconds}s timeout after 5s delay..." | tee -a "$log_file"
-                        sleep 5
-                    fi
-                else
-                    # 其他超时错误，不重试
-                    echo "[Error] Non-streaming timeout, not retrying" | tee -a "$log_file"
-                    return $exit_code
+        elif [ $exit_code -eq 124 ]; then
+            echo "[Timeout] Attempt $attempt timed out after ${timeout_seconds}s" | tee -a "$log_file"
+            
+            if grep -q "Streaming request timeout" "$log_file" 2>/dev/null; then
+                echo "[Timeout] Streaming timeout detected" | tee -a "$log_file"
+                if [ $attempt -lt $max_retries ]; then
+                    timeout_seconds=$((timeout_seconds + 60))
+                    echo "[Retry] Will retry with ${timeout_seconds}s timeout after 5s delay..." | tee -a "$log_file"
+                    sleep 5
                 fi
             else
-                echo "[Error] Attempt $attempt failed with exit code $exit_code" | tee -a "$log_file"
-                # 其他错误，根据错误类型决定是否重试
-                if grep -q "Streaming request timeout" "$log_file"; then
-                    echo "[Timeout] Streaming timeout detected, will retry" | tee -a "$log_file"
-                    if [ $attempt -lt $max_retries ]; then
-                        timeout_seconds=$((timeout_seconds + 60))
-                        sleep 5
-                    fi
-                else
-                    # 非超时错误，不重试
-                    return $exit_code
+                echo "[Error] Non-streaming timeout, not retrying" | tee -a "$log_file"
+                return $exit_code
+            fi
+        else
+            echo "[Error] Attempt $attempt failed with exit code $exit_code" | tee -a "$log_file"
+            
+            if grep -q "Streaming request timeout" "$log_file" 2>/dev/null; then
+                echo "[Timeout] Streaming timeout detected, will retry" | tee -a "$log_file"
+                if [ $attempt -lt $max_retries ]; then
+                    timeout_seconds=$((timeout_seconds + 60))
+                    sleep 5
                 fi
+            else
+                return $exit_code
             fi
         fi
         
@@ -1058,7 +1101,89 @@ execute_with_retry() {
     return 0
 }
 
+# ============================================
+# 工具失败自动切换函数
+# ============================================
 
+# 获取可用的候选工具列表（排除当前工具）
+get_candidate_tools() {
+    local current_tool="$1"
+    local candidates=()
+    
+    for tool in "${VALID_TOOLS[@]}"; do
+        if [ "$tool" != "$current_tool" ]; then
+            candidates+=("$tool")
+        fi
+    done
+    
+    # 随机打乱顺序
+    local shuffled=()
+    while [ ${#candidates[@]} -gt 0 ]; do
+        local idx=$((RANDOM % ${#candidates[@]}))
+        shuffled+=("${candidates[$idx]}")
+        candidates=("${candidates[@]:0:$idx}" "${candidates[@]:$((idx+1))}")
+    done
+    
+    echo "${shuffled[@]}"
+}
+
+# 带工具切换的执行函数
+# 当一个工具失败时，自动尝试其他工具
+execute_with_tool_fallback() {
+    local current_tool="$1"
+    local task_prompt="$2"
+    local log_file="$3"
+    local max_tool_retries="${4:-3}"
+    local timeout_seconds="${5:-180}"
+    
+    local tool_retries=0
+    local selected_tool="$current_tool"
+    local success=false
+    
+    while [ $tool_retries -lt $max_tool_retries ] && [ "$success" = "false" ]; do
+        echo "" | tee -a "$log_file"
+        echo "=== Tool: $selected_tool (attempt $((tool_retries + 1))/$max_tool_retries) ===" | tee -a "$log_file"
+        
+        local raw_cmd=$(build_tool_cmd "$selected_tool" "$task_prompt" "$log_file")
+        
+        # 使用超时重试执行当前工具
+        if execute_with_retry "$raw_cmd" "$log_file" 2 120; then
+            success=true
+            echo "[Tool Fallback] ✅ Success with tool: $selected_tool" | tee -a "$log_file"
+            return 0
+        fi
+        
+        # 当前工具失败，尝试切换
+        tool_retries=$((tool_retries + 1))
+        
+        if [ $tool_retries -lt $max_tool_retries ]; then
+            # 获取候选工具
+            local candidates=$(get_candidate_tools "$selected_tool")
+            
+            if [ -z "$candidates" ]; then
+                echo "[Tool Fallback] ⚠️ No more candidate tools available" | tee -a "$log_file"
+                break
+            fi
+            
+            # 随机选择一个候选工具
+            local candidate_array=($candidates)
+            local random_idx=$((RANDOM % ${#candidate_array[@]}))
+            local new_tool="${candidate_array[$random_idx]}"
+            
+            echo "[Tool Fallback] ❌ Tool '$selected_tool' failed, trying: $new_tool" | tee -a "$log_file"
+            selected_tool="$new_tool"
+            
+            sleep 2
+        fi
+    done
+    
+    if [ "$success" = "false" ]; then
+        echo "[Tool Fallback] ❌ All $max_tool_retries tool attempts failed" | tee -a "$log_file"
+        return 1
+    fi
+    
+    return 0
+}
 
 # ---------- 主循环 ----------
 
