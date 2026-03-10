@@ -58,10 +58,11 @@
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | **qwen** | 文本生成/代码 | `qwen -p "任务"` |
-| **opencode** | 代码开发 | `opencode run --task="任务"` |
+| **opencode** | 代码开发 | `opencode run "任务"` |
 | **cline** | 终端编码 | `cline "任务"` |
 | **kilocode** | 交互式编码 | `kilocode run "任务"` |
-| **iflow** | 工作流 | `iflow run --config="任务"` |
+| **iflow** | 工作流 | `iflow -p "任务"` |
+| **claude** | 通用编码 (YOLO 模式) | `claude --dangerously-skip-permissions "任务"` |
 
 ### 选择规则
 1. 优先选择当前负载最低的工具

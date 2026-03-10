@@ -33,6 +33,12 @@ Ralph 现在可以**自动判断**是否需要启用 Superpowers 模式来提高
 # 指定工具和迭代次数
 ./ralph.sh --tool opencode --max 20 -t "开发 REST API"
 
+# 指定模型 (使用 opencode + Qwen 3.5 Plus)
+./ralph.sh --tool opencode --model bailian-coding-plan/qwen3.5-plus -t "开发 REST API"
+
+# 使用 Superpowers (自动判断)
+./ralph.sh --tool opencode --max 20 -t "开发 REST API"
+
 # 使用 Superpowers (自动判断)
 ./ralph.sh --tool opencode -t "实现完整的用户管理系统"
 ```
@@ -65,6 +71,9 @@ vim prd.json  # 编辑任务
 | `--task` | `-t` | 直接任务描述 | - |
 | `--project` | `-p` | 项目目录 | 配置值 |
 | `--proxy` | | 代理地址 | 配置值 |
+| `--model` | | 模型名称 (用于 opencode，格式：provider/model) | - |
+
+### Superpowers 参数
 | `--model` | | 模型名称 (用于 opencode) | - |
 
 ### Superpowers 参数
